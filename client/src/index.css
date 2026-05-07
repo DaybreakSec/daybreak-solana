@@ -1,1 +1,87 @@
+/* Mona Sans — self-hosted */
+@font-face {
+  font-family: "Mona Sans";
+  src: url("/fonts/MonaSans-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Mona Sans";
+  src: url("/fonts/MonaSans-Medium.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
 @import "tailwindcss";
+
+@theme {
+  /* Surface */
+  --color-bg-base: #0F1729;
+  --color-bg-elevated: #1A2138;
+  --color-bg-elevated-2: #232C46;
+  --color-bg-recessed: #080E1F;
+  --color-text-primary: #F5EFE6;
+  --color-text-secondary: #9AA3B8;
+  --color-text-tertiary: #5F6885;
+
+  /* Dawn accents */
+  --color-dawn-magenta: #E85A8C;
+  --color-dawn-coral: #ED7F65;
+  --color-dawn-amber: #F5A65B;
+  --color-dawn-gold: #F5D78E;
+  --color-dawn-cream: #F5EFE6;
+
+  /* Severity */
+  --color-sev-critical: #D64878;
+  --color-sev-critical-text: #4B1528;
+  --color-sev-high: #F08D4A;
+  --color-sev-high-text: #4A1B0C;
+  --color-sev-medium: #E8C26B;
+  --color-sev-medium-text: #633806;
+  --color-sev-low: #7A92C4;
+  --color-sev-low-text: #042C53;
+  --color-sev-info: #8B95A8;
+  --color-sev-info-text: #1A2138;
+
+  /* Borders */
+  --color-border-subtle: rgba(245, 239, 230, 0.06);
+  --color-border-default: rgba(245, 239, 230, 0.1);
+  --color-border-strong: rgba(245, 239, 230, 0.22);
+
+  /* Typography */
+  --font-display: "Fraunces", Georgia, serif;
+  --font-sans: "Mona Sans", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", monospace;
+
+  /* Radius */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 10px;
+  --radius-2xl: 12px;
+}
+
+html, body, #root {
+  background: var(--color-bg-base);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  min-height: 100vh;
+}
+
+/* Focus ring — all interactive elements */
+:focus-visible {
+  outline: 2px solid var(--color-dawn-amber);
+  outline-offset: 2px;
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

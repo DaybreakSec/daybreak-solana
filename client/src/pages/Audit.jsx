@@ -1,135 +1,188 @@
-import React, { useState, useEffect } from 'react';
-import ProgressBar from '../components/ProgressBar';
+import { useState, useEffect, useRef } from 'react';
+import AgentCard from '../components/AgentCard';
+import HorizonMeter from '../components/HorizonMeter';
+import SectionLabel from '../components/SectionLabel';
 
-const PHASES = ['prescan', 'agents', 'dedup', 'done'];
-const PHASE_LABELS = {
-  prescan: 'Static Analysis',
-  agents: 'Agent Analysis',
-  dedup: 'Deduplication',
-  done: 'Complete',
+const AGENT_ORDER = [
+  'accounts-access',
+  'cpi-token',
+  'arithmetic-economic',
+  'state-lifecycle',
+  'invariant-logic',
+];
+
+const AGENT_DISPLAY = {
+  'accounts-access': 'accounts & access control',
+  'cpi-token': 'cpi & token operations',
+  'arithmetic-economic': 'arithmetic & economic',
+  'state-lifecycle': 'state lifecycle',
+  'invariant-logic': 'invariant & logic',
 };
 
-export default function Audit() {
+export default function Audit({ onStatusChange }) {
   const [progress, setProgress] = useState(null);
-  const [leads, setLeads] = useState(null);
+  const [findings, setFindings] = useState([]);
+  const [logOpen, setLogOpen] = useState(false);
+  const [logLines, setLogLines] = useState([]);
+  const completionFired = useRef(false);
 
   useEffect(() => {
-    const poll = setInterval(() => {
-      fetch('/api/state/progress').then(r => r.json()).then(setProgress).catch(() => {});
-      fetch('/api/state/leads').then(r => r.json()).then(setLeads).catch(() => {});
-    }, 2000);
-
-    fetch('/api/state/progress').then(r => r.json()).then(setProgress).catch(() => {});
-    fetch('/api/state/leads').then(r => r.json()).then(setLeads).catch(() => {});
-
-    return () => clearInterval(poll);
+    let active = true;
+    function poll() {
+      fetch('/api/state/progress').then(r => r.json()).then(data => {
+        if (active) setProgress(data);
+      }).catch(() => {});
+      fetch('/api/findings').then(r => r.json()).then(data => {
+        if (active) setFindings(data.findings || []);
+      }).catch(() => {});
+    }
+    poll();
+    const interval = setInterval(poll, 2000);
+    return () => { active = false; clearInterval(interval); };
   }, []);
 
-  const currentPhase = progress?.phase || 'prescan';
-  const phaseIdx = PHASES.indexOf(currentPhase);
+  // Completion transition (5.2)
+  useEffect(() => {
+    if (!progress || completionFired.current) return;
+    const allDone = progress.phase === 'done';
+    if (!allDone) return;
+
+    // check if all critical findings are triaged
+    const criticalPending = findings.filter(
+      f => f.severity === 'critical' && f.status === 'pending'
+    );
+    if (criticalPending.length > 0) return;
+
+    completionFired.current = true;
+    onStatusChange?.('complete');
+
+    // background warm shift
+    document.documentElement.style.setProperty('--color-bg-base', '#1A1F38');
+    document.documentElement.style.transition = 'background 3s linear';
+
+    // sweeping gold line
+    const line = document.createElement('div');
+    line.style.cssText = `
+      position: fixed; bottom: 0; left: 0; width: 100%; height: 1px;
+      background: var(--color-dawn-gold);
+      transform: translateX(-100%);
+      transition: transform 3s linear;
+      z-index: 9999;
+      pointer-events: none;
+    `;
+    document.body.appendChild(line);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        line.style.transform = 'translateX(0)';
+      });
+    });
+    setTimeout(() => {
+      line.remove();
+      document.documentElement.style.removeProperty('--color-bg-base');
+      document.documentElement.style.transition = '';
+    }, 3500);
+  }, [progress, findings, onStatusChange]);
+
   const agents = progress?.agents || {};
+  const scope = progress?.scope || {};
+  const framework = scope.framework || 'anchor';
+  const loc = scope.loc || 0;
+
+  // build severity counts for horizon meter
+  const sevCounts = { critical: 0, high: 0, medium: 0, low: 0 };
+  for (const f of findings) {
+    const s = f.severity?.toLowerCase();
+    if (s && sevCounts[s] !== undefined) sevCounts[s]++;
+  }
+
+  // agent findings grouped
+  const agentFindings = {};
+  for (const f of findings) {
+    if (!agentFindings[f.agent]) agentFindings[f.agent] = [];
+    agentFindings[f.agent].push(f);
+  }
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Audit Progress</h1>
+    <div>
+      {/* Page header */}
+      <div className="mb-6">
+        <SectionLabel>audit 003 · vault-program</SectionLabel>
+        <h1
+          className="font-display text-text-primary mt-1"
+          style={{ fontSize: '28px', lineHeight: '1.15', fontWeight: 500 }}
+        >
+          live progress
+        </h1>
+        <p className="font-mono text-text-tertiary mt-1" style={{ fontSize: '11px' }}>
+          five specialized agents · {loc.toLocaleString()} loc · {framework}
+        </p>
+      </div>
 
-      {/* Phase progress bar */}
-      <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-6">
-        <div className="flex justify-between mb-4">
-          {PHASES.map((phase, i) => (
+      {/* Agent grid: 2 columns, last card spans full width */}
+      <div className="grid grid-cols-2 gap-3 mb-6">
+        {AGENT_ORDER.map((agentKey, i) => {
+          const info = agents[agentKey] || { status: 'pending' };
+          const isLast = i === AGENT_ORDER.length - 1;
+          return (
             <div
-              key={phase}
-              className={`flex items-center gap-2 text-sm font-medium ${
-                i < phaseIdx
-                  ? 'text-emerald-400'
-                  : i === phaseIdx
-                  ? 'text-white'
-                  : 'text-gray-500'
-              }`}
+              key={agentKey}
+              className={isLast ? 'col-span-2' : ''}
             >
-              <div
-                className={`w-6 h-6 rounded-full flex items-center justify-center text-xs ${
-                  i < phaseIdx
-                    ? 'bg-emerald-500 text-white'
-                    : i === phaseIdx
-                    ? 'bg-emerald-500/30 text-emerald-400 border border-emerald-500'
-                    : 'bg-gray-700 text-gray-500'
-                }`}
-              >
-                {i < phaseIdx ? '✓' : i + 1}
-              </div>
-              {PHASE_LABELS[phase]}
+              <AgentCard
+                agent={{
+                  name: AGENT_DISPLAY[agentKey] || agentKey.replace(/-/g, ' '),
+                  status: info.status,
+                  currentFile: info.currentFile,
+                  duration: info.duration,
+                }}
+                index={i}
+                findings={agentFindings[agentKey] || []}
+              />
             </div>
-          ))}
-        </div>
-        <ProgressBar value={((phaseIdx + 1) / PHASES.length) * 100} />
+          );
+        })}
       </div>
 
-      {/* Static analysis leads */}
-      {leads && (
-        <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
-          <h2 className="text-lg font-semibold mb-2">Static Analysis Leads</h2>
-          <div className="text-3xl font-bold text-emerald-400">
-            {(leads.leads || []).length}
-          </div>
-          <p className="text-sm text-gray-400 mt-1">patterns detected by automated scanners</p>
-        </div>
-      )}
+      {/* Horizon meter */}
+      <HorizonMeter findings={sevCounts} totalLoc={loc} />
 
-      {/* Agent status cards */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
-        {Object.entries(agents).map(([name, info]) => (
+      {/* Collapsible log strip */}
+      <div className="mt-6">
+        <button
+          type="button"
+          className="flex items-center gap-2 font-mono text-text-tertiary cursor-pointer"
+          style={{ fontSize: '11px' }}
+          onClick={() => setLogOpen(!logOpen)}
+        >
+          <span style={{
+            display: 'inline-block',
+            transform: logOpen ? 'rotate(90deg)' : 'rotate(0deg)',
+            transition: 'transform 150ms',
+          }}>
+            ›
+          </span>
+          agent log
+        </button>
+        {logOpen && (
           <div
-            key={name}
-            className="bg-gray-800/50 border border-gray-700 rounded-lg p-4"
+            className="mt-2 bg-bg-recessed font-mono text-text-tertiary overflow-y-auto"
+            style={{
+              fontSize: '11px',
+              lineHeight: '1.6',
+              maxHeight: '200px',
+              padding: '10px 14px',
+              borderRadius: 'var(--radius-md)',
+              border: '0.5px solid var(--color-border-subtle)',
+            }}
           >
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="font-medium text-sm truncate">{formatAgentName(name)}</h3>
-              <StatusBadge status={info.status} />
-            </div>
-            {info.status === 'running' && (
-              <div className="mt-2">
-                <ProgressBar value={info.progress || 0} size="sm" />
-              </div>
-            )}
-            {info.findingCount !== undefined && (
-              <p className="text-xs text-gray-400 mt-2">
-                {info.findingCount} finding{info.findingCount !== 1 ? 's' : ''}
-              </p>
+            {logLines.length === 0 ? (
+              <span>no log output yet</span>
+            ) : (
+              logLines.map((line, i) => <div key={i}>{line}</div>)
             )}
           </div>
-        ))}
+        )}
       </div>
-
-      {currentPhase === 'done' && (
-        <div className="bg-emerald-500/10 border border-emerald-500/50 rounded-lg p-6 text-center">
-          <h2 className="text-xl font-bold text-emerald-400">Audit Complete</h2>
-          <p className="text-gray-400 mt-2">
-            Review findings in the Findings tab.
-          </p>
-        </div>
-      )}
     </div>
-  );
-}
-
-function formatAgentName(name) {
-  return name
-    .replace(/-/g, ' ')
-    .replace(/\b\w/g, c => c.toUpperCase());
-}
-
-function StatusBadge({ status }) {
-  const styles = {
-    pending: 'bg-gray-700 text-gray-400',
-    running: 'bg-blue-500/20 text-blue-400',
-    completed: 'bg-emerald-500/20 text-emerald-400',
-    error: 'bg-red-500/20 text-red-400',
-  };
-
-  return (
-    <span className={`px-2 py-0.5 rounded text-xs font-medium ${styles[status] || styles.pending}`}>
-      {status || 'pending'}
-    </span>
   );
 }

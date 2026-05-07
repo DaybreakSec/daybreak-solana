@@ -1,58 +1,73 @@
-import React from 'react';
-import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
+import { AnimatePresence, motion } from 'framer-motion';
+import AppFrame from './components/AppFrame';
 import Setup from './pages/Setup';
 import Scope from './pages/Scope';
 import Audit from './pages/Audit';
 import Findings from './pages/Findings';
 import Export from './pages/Export';
 
-const navItems = [
-  { path: '/', label: 'Setup' },
-  { path: '/scope', label: 'Scope' },
-  { path: '/audit', label: 'Audit' },
-  { path: '/findings', label: 'Findings' },
-  { path: '/export', label: 'Export' },
-];
+const pageTransition = {
+  initial: { opacity: 0, y: 8 },
+  animate: { opacity: 1, y: 0 },
+  exit: { opacity: 0, y: -8 },
+  transition: { duration: 0.25, ease: 'easeOut' },
+};
+
+function AnimatedRoutes({ appStatus, onStatusChange }) {
+  const location = useLocation();
+
+  return (
+    <AnimatePresence mode="wait">
+      <motion.div key={location.pathname} {...pageTransition}>
+        <Routes location={location}>
+          <Route path="/" element={<Setup />} />
+          <Route path="/scope" element={<Scope />} />
+          <Route path="/audit" element={<Audit onStatusChange={onStatusChange} />} />
+          <Route path="/findings" element={<Findings onStatusChange={onStatusChange} />} />
+          <Route path="/export" element={<Export />} />
+        </Routes>
+      </motion.div>
+    </AnimatePresence>
+  );
+}
 
 export default function App() {
+  const [appStatus, setAppStatus] = useState('idle');
+
+  // poll progress to determine global status
+  useEffect(() => {
+    let active = true;
+    async function poll() {
+      try {
+        const res = await fetch('/api/state/progress');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!active) return;
+        if (data.phase === 'done' || data.phase === 'triage-complete') {
+          setAppStatus('complete');
+        } else if (data.phase === 'agents' || data.phase === 'prescan') {
+          setAppStatus('scanning');
+        } else if (data.phase === 'dedup') {
+          setAppStatus('triage');
+        } else {
+          setAppStatus('idle');
+        }
+      } catch {
+        // ignore polling errors
+      }
+    }
+    poll();
+    const interval = setInterval(poll, 3000);
+    return () => { active = false; clearInterval(interval); };
+  }, []);
+
   return (
     <BrowserRouter>
-      <div className="min-h-screen bg-gray-950 text-gray-100">
-        <nav className="border-b border-gray-800 bg-gray-900">
-          <div className="max-w-7xl mx-auto px-4 py-3 flex items-center gap-8">
-            <span className="text-lg font-bold text-emerald-400 tracking-tight">
-              Daybreak Solana
-            </span>
-            <div className="flex gap-1">
-              {navItems.map(item => (
-                <NavLink
-                  key={item.path}
-                  to={item.path}
-                  end={item.path === '/'}
-                  className={({ isActive }) =>
-                    `px-3 py-1.5 rounded text-sm font-medium transition-colors ${
-                      isActive
-                        ? 'bg-emerald-500/20 text-emerald-400'
-                        : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
-                    }`
-                  }
-                >
-                  {item.label}
-                </NavLink>
-              ))}
-            </div>
-          </div>
-        </nav>
-        <main className="max-w-7xl mx-auto px-4 py-6">
-          <Routes>
-            <Route path="/" element={<Setup />} />
-            <Route path="/scope" element={<Scope />} />
-            <Route path="/audit" element={<Audit />} />
-            <Route path="/findings" element={<Findings />} />
-            <Route path="/export" element={<Export />} />
-          </Routes>
-        </main>
-      </div>
+      <AppFrame status={appStatus}>
+        <AnimatedRoutes appStatus={appStatus} onStatusChange={setAppStatus} />
+      </AppFrame>
     </BrowserRouter>
   );
 }
