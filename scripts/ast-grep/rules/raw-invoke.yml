@@ -1,0 +1,16 @@
+id: raw-invoke
+message: >-
+  Raw invoke() call detected. If the program_id argument is user-supplied
+  rather than a known constant, this could allow arbitrary CPI (Cross-Program
+  Invocation), which is a critical vulnerability.
+severity: error
+language: rust
+rule:
+  any:
+    - pattern: invoke(&Instruction { program_id: $PROG, $$$}, $$$)
+    - pattern: invoke(&solana_program::instruction::Instruction { program_id: $PROG, $$$}, $$$)
+    - pattern: invoke($INSTRUCTION, $$$)
+note: >-
+  Verify that the program_id in invoke() calls is a hardcoded known program
+  (e.g., spl_token::ID, system_program::ID). Never allow user-supplied
+  program IDs in CPI calls without thorough validation.

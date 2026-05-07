@@ -1,0 +1,16 @@
+id: unchecked-account
+message: >-
+  UncheckedAccount usage detected. In Anchor, UncheckedAccount bypasses
+  automatic account validation. It must be accompanied by a /// CHECK:
+  doc comment explaining why it is safe.
+severity: warning
+language: rust
+rule:
+  any:
+    - pattern: "UncheckedAccount<'$LIFETIME>"
+    - pattern: "AccountInfo<'$LIFETIME>"
+note: >-
+  When using UncheckedAccount (or raw AccountInfo in Anchor), you must add a
+  /// CHECK: doc comment on the preceding line explaining the safety rationale.
+  Without this, Anchor will refuse to compile, but if bypassed, it leaves
+  accounts unvalidated.

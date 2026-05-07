@@ -1,0 +1,16 @@
+id: missing-signer
+message: >-
+  AccountInfo parameter found. Ensure that is_signer is checked for accounts
+  that authorize operations. Missing signer validation is a critical
+  vulnerability that allows unauthorized access.
+severity: warning
+language: rust
+rule:
+  any:
+    - pattern: "$NAME: AccountInfo"
+    - pattern: "$NAME: &AccountInfo"
+    - pattern: "next_account_info($$$)"
+note: >-
+  For any account that authorizes an action (authority, admin, owner, payer),
+  verify account.is_signer == true. In Anchor, use the Signer<'info> type
+  or add a signer constraint.

@@ -1,0 +1,18 @@
+id: missing-reload
+message: >-
+  CPI invoke/invoke_signed call detected. After a CPI call that modifies
+  accounts, you must call .reload() on affected accounts to refresh their
+  deserialized data. Stale account data after CPI is a common vulnerability.
+severity: warning
+language: rust
+rule:
+  any:
+    - pattern: invoke($$$)
+    - pattern: invoke_signed($$$)
+    - pattern: solana_program::program::invoke($$$)
+    - pattern: solana_program::program::invoke_signed($$$)
+    - pattern: anchor_lang::solana_program::program::invoke($$$)
+    - pattern: anchor_lang::solana_program::program::invoke_signed($$$)
+note: >-
+  After any CPI call that modifies account data, call .reload() on accounts
+  that may have been changed by the invoked program to prevent using stale data.

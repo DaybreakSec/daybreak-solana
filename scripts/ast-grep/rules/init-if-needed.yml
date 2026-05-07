@@ -1,0 +1,15 @@
+id: init-if-needed
+message: >-
+  init_if_needed detected in Anchor account constraint. This is a known
+  foot-gun that can lead to re-initialization attacks if not paired with
+  proper has_one or other ownership checks.
+severity: error
+language: rust
+rule:
+  any:
+    - pattern: init_if_needed
+note: >-
+  init_if_needed allows an account to be initialized on the first call and
+  reused on subsequent calls. Ensure you have proper checks to prevent an
+  attacker from re-initializing an account with malicious data. Consider
+  using separate init and update instructions instead.

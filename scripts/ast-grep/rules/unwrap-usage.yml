@@ -1,0 +1,13 @@
+id: unwrap-usage
+message: >-
+  .unwrap() call detected. In on-chain Solana programs, unwrap() will cause a
+  panic and abort the transaction. Use proper error handling with match, if let,
+  ok_or(), or the ? operator instead.
+severity: warning
+language: rust
+rule:
+  pattern: $EXPR.unwrap()
+note: >-
+  Replace .unwrap() with proper error handling. In Anchor programs, use
+  .ok_or(ErrorCode::SomeError)? or .map_err(|_| ErrorCode::SomeError)?.
+  In native programs, return ProgramError variants.

@@ -1,0 +1,19 @@
+id: unchecked-arithmetic
+message: >-
+  Raw arithmetic operation detected. Solana programs should use checked_add,
+  checked_sub, checked_mul, or checked_div to prevent overflow/underflow panics
+  that can brick a program.
+severity: warning
+language: rust
+rule:
+  any:
+    - pattern: $A + $B
+    - pattern: $A - $B
+    - pattern: $A * $B
+    - pattern: $A += $B
+    - pattern: $A -= $B
+    - pattern: $A *= $B
+note: >-
+  Consider using checked_add(), checked_sub(), checked_mul() or the equivalent
+  safe math operations. In Anchor, you can also use the require! macro with
+  overflow checks.

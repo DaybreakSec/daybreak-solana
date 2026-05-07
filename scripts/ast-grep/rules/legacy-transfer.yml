@@ -1,0 +1,17 @@
+id: legacy-transfer
+message: >-
+  Legacy token::transfer detected. Use transfer_checked instead, which
+  validates the token mint and decimals, preventing transfers to wrong
+  token accounts.
+severity: warning
+language: rust
+rule:
+  any:
+    - pattern: token::transfer($$$)
+    - pattern: Transfer { $$$}
+    - pattern: spl_token::instruction::transfer($$$)
+note: >-
+  token::transfer (Transfer) does not validate the mint or decimals.
+  Use token::transfer_checked (TransferChecked) which requires specifying
+  the mint and decimals, providing additional safety against sending tokens
+  to the wrong token account.
