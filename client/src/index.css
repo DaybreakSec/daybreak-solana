@@ -24,8 +24,8 @@
   --color-bg-elevated-2: #232C46;
   --color-bg-recessed: #080E1F;
   --color-text-primary: #F5EFE6;
-  --color-text-secondary: #9AA3B8;
-  --color-text-tertiary: #5F6885;
+  --color-text-secondary: #B8C0D1;
+  --color-text-tertiary: #8892AB;
 
   /* Dawn accents */
   --color-dawn-magenta: #E85A8C;
@@ -35,8 +35,8 @@
   --color-dawn-cream: #F5EFE6;
 
   /* Severity */
-  --color-sev-critical: #D64878;
-  --color-sev-critical-text: #4B1528;
+  --color-sev-critical: #DC2626;
+  --color-sev-critical-text: #450A0A;
   --color-sev-high: #F08D4A;
   --color-sev-high-text: #4A1B0C;
   --color-sev-medium: #E8C26B;
@@ -45,6 +45,9 @@
   --color-sev-low-text: #042C53;
   --color-sev-info: #8B95A8;
   --color-sev-info-text: #1A2138;
+
+  /* Card interaction */
+  --color-card-hover-border: rgba(245, 166, 91, 0.45);
 
   /* Borders */
   --color-border-subtle: rgba(245, 239, 230, 0.06);
@@ -55,6 +58,9 @@
   --font-display: "Fraunces", Georgia, serif;
   --font-sans: "Mona Sans", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", "SF Mono", monospace;
+
+  /* Breakpoints */
+  --breakpoint-tablet: 720px;
 
   /* Radius */
   --radius-sm: 4px;

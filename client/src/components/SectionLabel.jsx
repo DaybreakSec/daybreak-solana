@@ -1,12 +1,12 @@
 export default function SectionLabel({ children }) {
   return (
     <span
-      className="font-mono text-text-tertiary"
+      className="font-mono text-text-secondary"
       style={{
-        fontSize: '11px',
+        fontSize: '14px',
         lineHeight: '1',
         fontWeight: 500,
-        letterSpacing: '0.12em',
+        letterSpacing: '0.10em',
       }}
     >
       {children}

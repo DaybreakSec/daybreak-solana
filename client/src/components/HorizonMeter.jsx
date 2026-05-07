@@ -7,7 +7,7 @@ const segments = [
   { key: 'low',      bg: 'var(--color-sev-low)',      text: 'var(--color-sev-low-text)' },
 ];
 
-export default function HorizonMeter({ findings = {}, totalLoc = 2847 }) {
+export default function HorizonMeter({ findings = {}, totalLoc = 0 }) {
   // findings: { critical: n, high: n, medium: n, low: n }
   const counts = {
     critical: findings.critical || 0,
@@ -31,12 +31,12 @@ export default function HorizonMeter({ findings = {}, totalLoc = 2847 }) {
     <div>
       {/* Header row */}
       <div className="flex items-center justify-between mb-2">
-        <SectionLabel>aggregate risk · horizon</SectionLabel>
+        <SectionLabel>aggregate risk</SectionLabel>
         <span
           className="font-mono text-text-secondary"
-          style={{ fontSize: '11px' }}
+          style={{ fontSize: '13px' }}
         >
-          {parts.join(' · ')}
+          {parts.join(' \u00b7 ')}
         </span>
       </div>
 
@@ -54,12 +54,13 @@ export default function HorizonMeter({ findings = {}, totalLoc = 2847 }) {
           return (
             <div
               key={seg.key}
+              title={`${count} ${seg.key}`}
               className="flex items-center justify-center font-mono transition-all duration-300 ease-out"
               style={{
                 flex: count,
                 background: seg.bg,
                 color: seg.text,
-                fontSize: '11px',
+                fontSize: '13px',
                 fontWeight: 500,
                 minWidth: count ? '28px' : 0,
               }}
@@ -74,20 +75,36 @@ export default function HorizonMeter({ findings = {}, totalLoc = 2847 }) {
         />
       </div>
 
-      {/* Footer labels */}
+      {/* Footer labels with sub-labels */}
       <div className="flex items-center justify-between mt-1.5">
-        <span
-          className="font-mono text-text-tertiary"
-          style={{ fontSize: '11px' }}
-        >
-          pre-dawn
-        </span>
-        <span
-          className="font-mono text-text-tertiary"
-          style={{ fontSize: '11px' }}
-        >
-          daybreak
-        </span>
+        <div>
+          <span
+            className="font-mono text-text-tertiary"
+            style={{ fontSize: '13px' }}
+          >
+            pre-dawn
+          </span>
+          <span
+            className="font-mono block"
+            style={{ fontSize: '11px', color: 'var(--color-text-tertiary)', opacity: 0.65 }}
+          >
+            (unverified)
+          </span>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <span
+            className="font-mono text-text-tertiary"
+            style={{ fontSize: '13px' }}
+          >
+            daybreak
+          </span>
+          <span
+            className="font-mono block"
+            style={{ fontSize: '11px', color: 'var(--color-text-tertiary)', opacity: 0.65 }}
+          >
+            (verified)
+          </span>
+        </div>
       </div>
     </div>
   );

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import FindingCard from '../components/FindingCard';
 import DetailPanel from '../components/DetailPanel';
 import SectionLabel from '../components/SectionLabel';
@@ -20,13 +21,23 @@ function bucketFindings(findings) {
 }
 
 export default function Findings({ onStatusChange }) {
+  const [searchParams] = useSearchParams();
   const [findings, setFindings] = useState([]);
   const [total, setTotal] = useState(0);
   const [severityFilter, setSeverityFilter] = useState('all');
-  const [agentFilter, setAgentFilter] = useState('all');
+  const [agentFilter, setAgentFilter] = useState(searchParams.get('agent') || 'all');
   const [selectedId, setSelectedId] = useState(null);
   const [dragOverColumn, setDragOverColumn] = useState(null);
   const containerRef = useRef(null);
+  const selectedIdRef = useRef(selectedId);
+  selectedIdRef.current = selectedId;
+  const [audit, setAudit] = useState(null);
+
+  useEffect(() => {
+    fetch('/api/state/audit').then(r => r.json()).then(data => {
+      if (data) setAudit(data);
+    }).catch(() => {});
+  }, []);
 
   const fetchFindings = useCallback(() => {
     const params = new URLSearchParams();
@@ -40,14 +51,14 @@ export default function Findings({ onStatusChange }) {
         setFindings(f);
         setTotal(data.total || 0);
         // auto-select first pending if nothing selected
-        if (!selectedId && f.length > 0) {
+        if (!selectedIdRef.current && f.length > 0) {
           const firstPending = f.find(x => x.status === 'pending');
           if (firstPending) setSelectedId(firstPending.id);
           else setSelectedId(f[0].id);
         }
       })
       .catch(() => {});
-  }, [severityFilter, agentFilter, selectedId]);
+  }, [severityFilter, agentFilter]);
 
   useEffect(() => {
     fetchFindings();
@@ -67,6 +78,12 @@ export default function Findings({ onStatusChange }) {
   // keyboard navigation
   useEffect(() => {
     function handleKey(e) {
+      // Don't intercept keystrokes in form elements
+      const tag = e.target.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target.isContentEditable) {
+        return;
+      }
+
       const allIds = findings.map(f => f.id);
       const idx = allIds.indexOf(selectedId);
       if (e.key === 'j' && idx < allIds.length - 1) {
@@ -114,26 +131,34 @@ export default function Findings({ onStatusChange }) {
     setDragOverColumn(null);
     const id = e.dataTransfer.getData('text/plain');
     if (!id) return;
-    const statusMap = {
-      pending: 'pending',
-      valid: 'valid',
-      dismissed: 'out-of-scope',
-    };
-    updateFinding(id, { status: statusMap[column] || 'pending' });
+
+    if (column === 'valid') {
+      updateFinding(id, { status: 'valid' });
+    } else if (column === 'dismissed') {
+      // Preserve existing dismiss reason if re-dragging, otherwise default to invalid
+      const existing = findings.find(f => f.id === id);
+      const alreadyDismissed = existing && ['invalid', 'not-important', 'out-of-scope'].includes(existing.status);
+      updateFinding(id, {
+        status: alreadyDismissed ? existing.status : 'invalid',
+        triageReason: alreadyDismissed ? existing.triageReason : 'invalid',
+      });
+    } else {
+      updateFinding(id, { status: 'pending' });
+    }
   }
 
   return (
     <div ref={containerRef}>
       {/* Page header */}
       <div className="mb-4">
-        <SectionLabel>audit 003 · triage</SectionLabel>
+        <SectionLabel>audit · {audit?.repoUrl?.split('/').pop()?.replace('.git', '') || audit?.localPath?.split('/').pop() || 'triage'}</SectionLabel>
         <h1
           className="font-display text-text-primary mt-1"
           style={{ fontSize: '28px', lineHeight: '1.15', fontWeight: 500 }}
         >
           findings
         </h1>
-        <p className="font-mono text-text-tertiary mt-1" style={{ fontSize: '11px' }}>
+        <p className="font-mono text-text-tertiary mt-1" style={{ fontSize: '13px' }}>
           {total} surfaced · {pendingCount} pending · {verdictCount} verdicts in
         </p>
       </div>
@@ -166,60 +191,78 @@ export default function Findings({ onStatusChange }) {
         </div>
       </div>
 
-      {/* Three columns */}
-      <div className="grid grid-cols-3 gap-2.5">
-        {[
-          { key: 'pending', label: 'pending', items: pending },
-          { key: 'valid', label: 'valid', items: valid },
-          { key: 'dismissed', label: 'dismissed', items: dismissed },
-        ].map(col => (
-          <div
-            key={col.key}
-            onDragOver={e => { e.preventDefault(); setDragOverColumn(col.key); }}
-            onDragLeave={() => setDragOverColumn(null)}
-            onDrop={e => handleDrop(col.key, e)}
-            style={{
-              borderRadius: 'var(--radius-lg)',
-              border: dragOverColumn === col.key
-                ? '0.5px solid var(--color-border-strong)'
-                : '0.5px solid transparent',
-              padding: '8px',
-              transition: 'border-color 150ms',
-            }}
-          >
-            <div className="flex items-center justify-between mb-3 px-1">
-              <SectionLabel>{col.label}</SectionLabel>
-              <span className="font-mono text-text-tertiary" style={{ fontSize: '11px' }}>
-                {col.items.length}
-              </span>
+      {/* Main layout: kanban left, detail right */}
+      <div className="flex gap-4" style={{ minHeight: 'calc(100vh - 260px)' }}>
+        {/* Kanban columns */}
+        <div className="grid grid-cols-3 gap-2.5" style={{ flex: '0 0 55%', alignContent: 'start' }}>
+          {[
+            { key: 'pending', label: 'pending', items: pending },
+            { key: 'valid', label: 'valid', items: valid },
+            { key: 'dismissed', label: 'dismissed', items: dismissed },
+          ].map(col => (
+            <div
+              key={col.key}
+              onDragOver={e => { e.preventDefault(); setDragOverColumn(col.key); }}
+              onDragLeave={() => setDragOverColumn(null)}
+              onDrop={e => handleDrop(col.key, e)}
+              style={{
+                borderRadius: 'var(--radius-lg)',
+                border: dragOverColumn === col.key
+                  ? '0.5px solid var(--color-border-strong)'
+                  : '0.5px solid transparent',
+                padding: '8px',
+                transition: 'border-color 150ms',
+              }}
+            >
+              <div className="flex items-center justify-between mb-3 px-1">
+                <SectionLabel>{col.label}</SectionLabel>
+                <span className="font-mono text-text-tertiary" style={{ fontSize: '13px' }}>
+                  {col.items.length}
+                </span>
+              </div>
+              <div>
+                {col.items.map(f => (
+                  <FindingCard
+                    key={f.id}
+                    finding={f}
+                    selected={f.id === selectedId}
+                    muted={col.key === 'dismissed'}
+                    onClick={() => setSelectedId(f.id)}
+                  />
+                ))}
+                {col.items.length === 0 && (
+                  <p className="text-text-tertiary font-mono text-center py-6" style={{ fontSize: '13px' }}>
+                    {col.key === 'pending' ? 'no pending findings' : `no ${col.label} findings`}
+                  </p>
+                )}
+              </div>
             </div>
-            <div>
-              {col.items.map(f => (
-                <FindingCard
-                  key={f.id}
-                  finding={f}
-                  selected={f.id === selectedId}
-                  muted={col.key === 'dismissed'}
-                  onClick={() => setSelectedId(f.id)}
-                />
-              ))}
-              {col.items.length === 0 && (
-                <p className="text-text-tertiary font-mono text-center py-6" style={{ fontSize: '11px' }}>
-                  {col.key === 'pending' ? 'no pending findings' : `no ${col.label} findings`}
-                </p>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
 
-      {/* Detail panel */}
-      {selectedFinding && (
-        <DetailPanel
-          finding={selectedFinding}
-          onVerdict={update => updateFinding(selectedFinding.id, update)}
-        />
-      )}
+        {/* Detail panel — right side, sticky */}
+        <div style={{ flex: '1 1 45%', position: 'sticky', top: '72px', alignSelf: 'start', maxHeight: 'calc(100vh - 100px)', overflowY: 'auto' }}>
+          {selectedFinding ? (
+            <DetailPanel
+              finding={selectedFinding}
+              onVerdict={update => updateFinding(selectedFinding.id, update)}
+            />
+          ) : (
+            <div
+              className="flex items-center justify-center bg-bg-elevated"
+              style={{
+                borderRadius: 'var(--radius-xl)',
+                border: '0.5px solid var(--color-border-subtle)',
+                padding: '40px 20px',
+              }}
+            >
+              <p className="font-mono text-text-tertiary" style={{ fontSize: '13px' }}>
+                select a finding to view details
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* Keyboard hints footer */}
       <div
