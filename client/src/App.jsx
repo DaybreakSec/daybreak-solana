@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import AppFrame from './components/AppFrame';
+import ErrorBoundary from './components/ErrorBoundary';
+import { ToastProvider } from './components/Toast';
 import Setup from './pages/Setup';
 import Scope from './pages/Scope';
 import Audit from './pages/Audit';
@@ -22,11 +24,11 @@ function AnimatedRoutes({ appStatus, onStatusChange }) {
     <AnimatePresence mode="wait">
       <motion.div key={location.pathname} {...pageTransition}>
         <Routes location={location}>
-          <Route path="/" element={<Setup />} />
-          <Route path="/scope" element={<Scope />} />
-          <Route path="/audit" element={<Audit onStatusChange={onStatusChange} />} />
-          <Route path="/findings" element={<Findings onStatusChange={onStatusChange} />} />
-          <Route path="/export" element={<Export />} />
+          <Route path="/" element={<ErrorBoundary><Setup /></ErrorBoundary>} />
+          <Route path="/scope" element={<ErrorBoundary><Scope /></ErrorBoundary>} />
+          <Route path="/audit" element={<ErrorBoundary><Audit onStatusChange={onStatusChange} /></ErrorBoundary>} />
+          <Route path="/findings" element={<ErrorBoundary><Findings onStatusChange={onStatusChange} /></ErrorBoundary>} />
+          <Route path="/export" element={<ErrorBoundary><Export /></ErrorBoundary>} />
         </Routes>
       </motion.div>
     </AnimatePresence>
@@ -45,17 +47,17 @@ export default function App() {
         if (!res.ok) return;
         const data = await res.json();
         if (!active) return;
-        if (data.phase === 'done' || data.phase === 'triage-complete') {
+        if (data.phase === 'done' || data.phase === 'done-with-errors' || data.phase === 'triage-complete') {
           setAppStatus('complete');
-        } else if (data.phase === 'agents' || data.phase === 'prescan') {
+        } else if (data.phase === 'agents' || data.phase === 'prescan' || data.phase === 'scanning' || data.phase === 'validating') {
           setAppStatus('scanning');
         } else if (data.phase === 'dedup') {
           setAppStatus('triage');
         } else {
           setAppStatus('idle');
         }
-      } catch {
-        // ignore polling errors
+      } catch (err) {
+        console.warn('Progress poll failed:', err.message);
       }
     }
     poll();
@@ -65,9 +67,11 @@ export default function App() {
 
   return (
     <BrowserRouter>
-      <AppFrame status={appStatus}>
-        <AnimatedRoutes appStatus={appStatus} onStatusChange={setAppStatus} />
-      </AppFrame>
+      <ToastProvider>
+        <AppFrame status={appStatus}>
+          <AnimatedRoutes appStatus={appStatus} onStatusChange={setAppStatus} />
+        </AppFrame>
+      </ToastProvider>
     </BrowserRouter>
   );
 }

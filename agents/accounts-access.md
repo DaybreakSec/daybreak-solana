@@ -389,11 +389,107 @@ pub counter: Account<'info, Counter>,
 
 ---
 
+## Audit Checklist
+
+For each question below, check whether the code exhibits this pattern. If yes, develop into a full finding. If no, move on.
+
+### 1. Account Validation
+
+**Signer Checks**
+- Are all authority/admin accounts marked as `Signer` (or `Signer<'info>` in Anchor)?
+- Can any privileged instruction be executed without the required signer?
+- Are multi-sig requirements enforced where applicable?
+- Can a signer check be bypassed by substituting a different account in the same transaction?
+- Are fee payer and authority treated as distinct roles where needed?
+- For instructions that modify ownership or authority, is the current authority validated as a signer?
+- Are delegate or proxy signers validated against an on-chain allowlist or delegation record?
+
+**Owner Checks**
+- Is the `owner` field of every deserialized account validated against the expected program ID?
+- Can an attacker pass an account owned by a different program that happens to deserialize successfully?
+- For SPL token accounts, is the owner validated to be the Token Program (or Token-2022 Program)?
+- If using `AccountInfo` directly (not Anchor `Account<T>`), is `account.owner == program_id` explicitly checked?
+
+**Writable Checks**
+- Are accounts marked `mut` (writable) only when modification is actually required?
+- Can an attacker pass a writable account where a read-only one is expected?
+
+**Discriminator / Type Safety**
+- Does every account struct include a discriminator?
+- Can an account of type A be deserialized as type B due to missing or shared discriminators?
+- Are zero-initialized accounts distinguishable from legitimately initialized accounts?
+- For programs with multiple account types, are all discriminators unique and non-overlapping?
+
+**Cross-Account Relationships**
+- Are `has_one` or equivalent constraints used to validate related accounts reference each other correctly?
+- Can an attacker substitute a valid account from a different context (different user's vault, different pool's mint)?
+- Are token account mint fields validated to match the expected mint?
+- For accounts that reference other accounts by pubkey, are those references validated at instruction time?
+
+### 2. PDA Security
+
+**Canonical Bump**
+- Is the canonical bump stored on-chain and reused, rather than recomputed each time?
+- Can a non-canonical bump be supplied by a user to derive a different address?
+- Are `seeds` and `bump` constraints in Anchor using the stored bump (`bump = account.bump`)?
+
+**Seed Design**
+- Are PDA seeds deterministic, unique, and free from user-controlled variable-length inputs that could cause collisions?
+- Can two different logical entities produce the same PDA due to seed concatenation ambiguity?
+- Are fixed-length delimiters or length prefixes used between variable-length seed components?
+- Do seeds include the authority/owner pubkey to scope PDAs per user?
+
+**PDA Sharing / Scope**
+- Can a PDA intended for one instruction or context be reused in another instruction with different semantics?
+- Are PDAs scoped tightly enough to prevent cross-user or cross-pool confusion?
+- If a PDA serves as a signer for CPI, can an attacker invoke the program to make the PDA sign unintended operations?
+
+---
+
+### Step 11: Guard-Lift Analysis
+For each `require!`, `if ... return Err(...)`, `constraint =`, or guard predicate you encounter:
+1. Ask: "Does this imply a property that must hold across ALL call paths, not just here?"
+2. If yes, search for ALL callers/other functions that modify the same state
+3. If ANY caller lacks an equivalent guard, that gap is both an invariant violation AND a potential finding
+Example: if `withdraw` checks `balance >= amount`, find ALL other functions that modify `balance` and verify they maintain the invariant.
+
+### Step 12: Check Splitting
+Separate identification from assessment:
+- IDENTIFICATION (scanning): "There are N instances of [pattern] in this codebase" — list all with file:line
+- ASSESSMENT (analysis): "Of these N, finding M where [condition] because..."
+This prevents attention dilution. Report both the scan results and the assessment.
+
+### Step 13: Curiosity Principle
+For every externally-reachable instruction, ask:
+- What happens if I pass the same account twice for different parameters?
+- What happens at zero? At max value? At boundary conditions?
+- What if a CPI or oracle returns an unexpected result?
+- What if this instruction is called in the same transaction as another related instruction?
+- What if the account was just created? Just about to be closed?
+
+---
+
+### Output Discipline: Do-Not-Exploit Rule
+Name the asymmetry, the divergence, the missing check, the unusual pattern — then STOP.
+Do NOT fabricate elaborate multi-step exploit chains. Use language like:
+- "Worth checking whether..."
+- "This creates an asymmetry where..."
+- "This diverges from the expected invariant..."
+Let the validation agent and human auditor finish the chain.
+
+### Prescan Lead Disposition
+For each prescan lead relevant to your domain, you MUST either:
+- CONFIRM: develop it into a full FINDING with exploit scenario
+- DISMISS: note why it's a false positive (e.g., "guarded by check on line N")
+Do NOT silently ignore leads. Report your disposition in a summary at the end.
+
+---
+
 ## Dedup Key Format
 
-For each finding, construct a dedup key: `program | instruction | bug_class`
+For each finding, construct a dedup key: `program | instruction | bug_class | instance` where instance disambiguates multiple findings of the same class in the same instruction (e.g. the affected account name or line number).
 
-Example: `token_vault | deposit | missing_signer_check`
+Example: `token_vault | deposit | missing_signer_check | authority`
 
 Before emitting a FINDING, verify that the bug class falls within your scope (listed above). If it belongs to another agent's domain, emit a LEAD instead.
 
@@ -407,12 +503,14 @@ For confirmed vulnerabilities with concrete proof:
 FINDING:
   title: <concise title>
   severity: critical|high|medium|low|informational
+  confidence: high|medium|low
   file: <file path>
   line: <line number>
   bugClass: <bug class identifier>
   description: <what the vulnerability is>
   proof: <specific code references showing the vulnerability>
   recommendation: <how to fix it>
+  detection: <how it was found: "checklist", "guard-lift", "lead-N", "manual">
 ```
 
 For suspicious patterns that need further investigation or belong to another agent's domain:
@@ -421,6 +519,7 @@ For suspicious patterns that need further investigation or belong to another age
 LEAD:
   title: <concise title>
   severity: <estimated severity>
+  confidence: high|medium|low
   file: <file path>
   line: <line number>
   bugClass: <bug class identifier>

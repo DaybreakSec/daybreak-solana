@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import SeverityBadge from './SeverityBadge';
 
-export default function FindingCard({ finding, selected = false, muted = false, onClick, onDragStart }) {
+export default function FindingCard({ finding, selected = false, muted = false, onClick, onDragStart, checkbox = false, checked = false }) {
   const [pulsing, setPulsing] = useState(false);
   const mountedAt = useRef(Date.now());
 
@@ -51,12 +51,65 @@ export default function FindingCard({ finding, selected = false, muted = false, 
           : 'none',
       }}
     >
-      <SeverityBadge severity={finding.severity} />
+      <div className="flex items-center gap-1.5">
+        {checkbox && (
+          <input
+            type="checkbox"
+            checked={checked}
+            readOnly
+            className="accent-[var(--color-dawn-amber)] mr-1"
+            style={{ flexShrink: 0 }}
+          />
+        )}
+        <SeverityBadge severity={finding.severity} />
+        {finding.confidence && (
+          <span
+            className="font-mono"
+            style={{
+              fontSize: '12px',
+              letterSpacing: '0.06em',
+              padding: '1px 5px',
+              borderRadius: '999px',
+              color: finding.confidence === 'high'
+                ? 'var(--color-text-secondary)'
+                : 'var(--color-text-tertiary)',
+              border: '0.5px solid var(--color-border-subtle)',
+            }}
+          >
+            {finding.confidence}
+          </span>
+        )}
+        {finding.validation && (
+          <span
+            className="font-mono"
+            style={{
+              fontSize: '12px',
+              letterSpacing: '0.06em',
+              padding: '1px 5px',
+              borderRadius: '999px',
+              color: finding.validation.verdict === 'confirmed'
+                ? 'var(--color-dawn-gold)'
+                : finding.validation.verdict === 'refuted'
+                  ? 'var(--color-dawn-coral)'
+                  : 'var(--color-text-tertiary)',
+              border: `0.5px solid ${
+                finding.validation.verdict === 'confirmed'
+                  ? 'rgba(232, 178, 56, 0.3)'
+                  : finding.validation.verdict === 'refuted'
+                    ? 'rgba(232, 90, 90, 0.3)'
+                    : 'var(--color-border-subtle)'
+              }`,
+            }}
+          >
+            {finding.validation.verdict}
+          </span>
+        )}
+      </div>
 
       <span
         className="font-display text-text-primary"
         style={{
-          fontSize: '15px',
+          fontSize: '17px',
           lineHeight: '1.35',
           fontWeight: 500,
           display: '-webkit-box',
@@ -71,16 +124,24 @@ export default function FindingCard({ finding, selected = false, muted = false, 
       {isDismissed ? (
         <span
           className="font-mono text-text-tertiary"
-          style={{ fontSize: '11px' }}
+          style={{ fontSize: '13px' }}
         >
           {finding.triageReason || finding.status?.replace('-', ' ')}
         </span>
       ) : (
         <span
           className="font-mono text-text-tertiary"
-          style={{ fontSize: '11px' }}
+          style={{
+            fontSize: '13px',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            display: 'block',
+            direction: 'rtl',
+            textAlign: 'left',
+          }}
         >
-          {finding.file}{finding.line != null ? `:${finding.line}` : ''}
+          <bdi>{finding.file}{finding.line != null ? `:${finding.line}` : ''}</bdi>
         </span>
       )}
 

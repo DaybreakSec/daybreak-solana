@@ -1,29 +1,13 @@
 const express = require('express');
-const fs = require('fs');
-const path = require('path');
+const { withLock, readFindings, writeFindings } = require('../lib/state-io');
+const { isValidFindingId } = require('../lib/path-validator');
 const router = express.Router();
 
-function getFindingsPath() {
-  const stateDir = process.env.AUDIT_STATE_DIR || path.join(process.cwd(), 'state');
-  if (!fs.existsSync(stateDir)) {
-    fs.mkdirSync(stateDir, { recursive: true });
-  }
-  return path.join(stateDir, 'findings.json');
-}
+const VALID_STATUSES = ['pending', 'valid', 'invalid', 'not-important', 'out-of-scope'];
+const VALID_SEVERITIES = ['critical', 'high', 'medium', 'low', 'informational'];
+const SEVERITY_RANK = { critical: 0, high: 1, medium: 2, low: 3, informational: 4 };
 
-function readFindings() {
-  const filepath = getFindingsPath();
-  if (!fs.existsSync(filepath)) {
-    return { findings: [] };
-  }
-  return JSON.parse(fs.readFileSync(filepath, 'utf8'));
-}
-
-function writeFindings(data) {
-  fs.writeFileSync(getFindingsPath(), JSON.stringify(data, null, 2));
-}
-
-// GET /api/findings - read findings with optional filters
+// GET /api/findings - read findings with optional filters, search, and sort
 router.get('/', (req, res) => {
   try {
     const data = readFindings();
@@ -43,34 +27,119 @@ router.get('/', (req, res) => {
       findings = findings.filter(f => f.status === req.query.status);
     }
 
+    // Text search across title, description, file, bugClass
+    if (req.query.search) {
+      const q = req.query.search.toLowerCase();
+      findings = findings.filter(f =>
+        (f.title || '').toLowerCase().includes(q)
+        || (f.description || '').toLowerCase().includes(q)
+        || (f.file || '').toLowerCase().includes(q)
+        || (f.bugClass || '').toLowerCase().includes(q)
+      );
+    }
+
+    // Sort
+    if (req.query.sort) {
+      const sortKey = req.query.sort;
+      findings.sort((a, b) => {
+        if (sortKey === 'severity') {
+          return (SEVERITY_RANK[a.severity] ?? 5) - (SEVERITY_RANK[b.severity] ?? 5);
+        }
+        if (sortKey === 'confidence') {
+          const confRank = { high: 0, medium: 1, low: 2 };
+          return (confRank[a.confidence] ?? 3) - (confRank[b.confidence] ?? 3);
+        }
+        if (sortKey === 'file') {
+          return (a.file || '').localeCompare(b.file || '');
+        }
+        if (sortKey === 'agent') {
+          return (a.agent || '').localeCompare(b.agent || '');
+        }
+        return 0;
+      });
+    }
+
     res.json({ findings, total: data.findings ? data.findings.length : 0 });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Failed to read findings' });
   }
 });
 
 // PUT /api/findings/:id - update finding triage
-router.put('/:id', (req, res) => {
+router.put('/:id', async (req, res) => {
+  if (!isValidFindingId(req.params.id)) {
+    return res.status(400).json({ error: 'Invalid finding ID format' });
+  }
+
   try {
-    const data = readFindings();
-    const idx = data.findings.findIndex(f => f.id === req.params.id);
-
-    if (idx === -1) {
-      return res.status(404).json({ error: 'Finding not found' });
+    // Validate enum fields before acquiring lock
+    if (req.body.status !== undefined && !VALID_STATUSES.includes(req.body.status)) {
+      return res.status(400).json({ error: `Invalid status. Must be one of: ${VALID_STATUSES.join(', ')}` });
+    }
+    if (req.body.severity !== undefined && !VALID_SEVERITIES.includes(req.body.severity)) {
+      return res.status(400).json({ error: `Invalid severity. Must be one of: ${VALID_SEVERITIES.join(', ')}` });
     }
 
-    const allowed = ['status', 'severity', 'notes', 'triageReason'];
-    for (const key of allowed) {
-      if (req.body[key] !== undefined) {
-        data.findings[idx][key] = req.body[key];
+    const result = await withLock(() => {
+      const data = readFindings();
+      const idx = data.findings.findIndex(f => f.id === req.params.id);
+
+      if (idx === -1) return { status: 404, body: { error: 'Finding not found' } };
+
+      const allowed = ['status', 'severity', 'notes', 'triageReason'];
+      for (const key of allowed) {
+        if (req.body[key] !== undefined) {
+          data.findings[idx][key] = req.body[key];
+        }
       }
-    }
-    data.findings[idx].triagedAt = new Date().toISOString();
+      data.findings[idx].triagedAt = new Date().toISOString();
 
-    writeFindings(data);
-    res.json(data.findings[idx]);
+      writeFindings(data);
+      return { status: 200, body: data.findings[idx] };
+    });
+
+    res.status(result.status).json(result.body);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Failed to update finding' });
+  }
+});
+
+// POST /api/findings/bulk-triage - update multiple findings at once
+router.post('/bulk-triage', async (req, res) => {
+  const { ids, status, triageReason } = req.body;
+
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: 'ids must be a non-empty array' });
+  }
+  if (!ids.every(id => isValidFindingId(id))) {
+    return res.status(400).json({ error: 'All ids must be valid finding IDs' });
+  }
+  if (!VALID_STATUSES.includes(status)) {
+    return res.status(400).json({ error: `Invalid status. Must be one of: ${VALID_STATUSES.join(', ')}` });
+  }
+
+  try {
+    const result = await withLock(() => {
+      const data = readFindings();
+      const idSet = new Set(ids);
+      let updated = 0;
+
+      for (const f of data.findings) {
+        if (idSet.has(f.id)) {
+          f.status = status;
+          if (triageReason) f.triageReason = triageReason;
+          f.triagedAt = new Date().toISOString();
+          updated++;
+        }
+      }
+
+      writeFindings(data);
+      return { updated };
+    });
+
+    res.json({ ok: true, updated: result.updated });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to bulk update findings' });
   }
 });
 

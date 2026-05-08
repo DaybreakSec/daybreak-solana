@@ -684,11 +684,112 @@ Issues Found:
 
 ---
 
+## Audit Checklist
+
+For each question below, check whether the code exhibits this pattern. If yes, develop into a full finding. If no, move on.
+
+### 5. Account Lifecycle
+
+**Initialization**
+- Is there a guard preventing re-initialization of already initialized accounts?
+- Can `init_if_needed` be abused to reinitialize an existing account with attacker-controlled parameters?
+- Is the `space` allocation sufficient for all current and future fields?
+- Can initialization be front-run by an attacker who creates the account with malicious initial state?
+- Are all fields of a new account explicitly set during initialization?
+
+**Closing / Cleanup**
+- Is account data zeroed (discriminator and all fields) when the account is closed?
+- Are all lamports transferred to the destination before the account is closed?
+- Can a closed account be "revived" within the same transaction by another instruction that sends it lamports?
+- Are all references to the closed account cleaned up or invalidated?
+- Can an attacker close someone else's account by bypassing authority checks?
+- Is there a check that the account is in a valid state for closing?
+
+**Account Revival**
+- Can a closed-but-not-zeroed account be revived by sending lamports to it in the same transaction?
+- Does the program check for a zeroed discriminator to detect revived accounts?
+- After account closure, can the same transaction re-create the account at the same address?
+
+### 8. State Machine Integrity
+
+**Transition Guards**
+- Is every state transition validated against a set of allowed source states?
+- Can an attacker skip intermediate states by calling instructions out of order?
+- Are enum values for state fields validated to be within the expected range?
+- Can a user call the same state-transition instruction twice in one transaction?
+
+**Timestamp / Deadline Safety**
+- Is `Clock::get()?.unix_timestamp` used instead of relying on instruction data for the current time?
+- Can stale transactions execute after a deadline by sitting in the mempool?
+- Are start and end timestamps validated (start < end)?
+
+**Terminal State Handling**
+- Once an entity reaches a terminal state, are all mutating instructions blocked?
+- Can a terminal-state account be cleaned up, or does it remain forever consuming rent?
+
+### 11. Denial of Service
+
+**Compute Budget**
+- Are there loops or iterations that scale with user-controlled data and could exceed the compute unit limit?
+- Can an attacker create many small accounts that increase compute cost for legitimate operations?
+- Can compute-heavy instructions be split across multiple transactions if needed?
+
+**Storage / Rent Attacks**
+- Can an attacker create many accounts that the program must iterate over?
+- Are account creation costs borne by the user creating them, not the protocol?
+- Can an attacker send unsolicited lamports to PDAs to prevent them from being closed?
+
+**Unbounded Operations**
+- Are vector or array operations bounded by a maximum length?
+- Can an attacker add entries to on-chain collections without bound?
+- Are pagination or chunking mechanisms used for operations over large data sets?
+
+---
+
+### Step 13: Guard-Lift Analysis
+For each `require!`, `if ... return Err(...)`, `constraint =`, or guard predicate you encounter:
+1. Ask: "Does this imply a property that must hold across ALL call paths, not just here?"
+2. If yes, search for ALL callers/other functions that modify the same state
+3. If ANY caller lacks an equivalent guard, that gap is both an invariant violation AND a potential finding
+Example: if `withdraw` checks `balance >= amount`, find ALL other functions that modify `balance` and verify they maintain the invariant.
+
+### Step 14: Check Splitting
+Separate identification from assessment:
+- IDENTIFICATION (scanning): "There are N instances of [pattern] in this codebase" — list all with file:line
+- ASSESSMENT (analysis): "Of these N, finding M where [condition] because..."
+This prevents attention dilution. Report both the scan results and the assessment.
+
+### Step 15: Curiosity Principle
+For every externally-reachable instruction, ask:
+- What happens if I pass the same account twice for different parameters?
+- What happens at zero? At max value? At boundary conditions?
+- What if a CPI or oracle returns an unexpected result?
+- What if this instruction is called in the same transaction as another related instruction?
+- What if the account was just created? Just about to be closed?
+
+---
+
+### Output Discipline: Do-Not-Exploit Rule
+Name the asymmetry, the divergence, the missing check, the unusual pattern — then STOP.
+Do NOT fabricate elaborate multi-step exploit chains. Use language like:
+- "Worth checking whether..."
+- "This creates an asymmetry where..."
+- "This diverges from the expected invariant..."
+Let the validation agent and human auditor finish the chain.
+
+### Prescan Lead Disposition
+For each prescan lead relevant to your domain, you MUST either:
+- CONFIRM: develop it into a full FINDING with exploit scenario
+- DISMISS: note why it's a false positive (e.g., "guarded by check on line N")
+Do NOT silently ignore leads. Report your disposition in a summary at the end.
+
+---
+
 ## Dedup Key Format
 
-For each finding, construct a dedup key: `program | instruction | bug_class`
+For each finding, construct a dedup key: `program | instruction | bug_class | instance` where instance disambiguates multiple findings of the same class in the same instruction (e.g. the affected account or state field).
 
-Example: `order_book | cancel_order | account_revival_after_close`
+Example: `order_book | cancel_order | account_revival_after_close | order_account`
 
 Before emitting a FINDING, verify that the bug class falls within your scope (listed above). If it belongs to another agent's domain, emit a LEAD instead.
 
@@ -702,12 +803,14 @@ For confirmed vulnerabilities with concrete proof:
 FINDING:
   title: <concise title>
   severity: critical|high|medium|low|informational
+  confidence: high|medium|low
   file: <file path>
   line: <line number>
   bugClass: <bug class identifier>
   description: <what the vulnerability is>
   proof: <specific code references showing the vulnerability>
   recommendation: <how to fix it>
+  detection: <how it was found: "checklist", "guard-lift", "lead-N", "manual">
 ```
 
 For suspicious patterns that need further investigation or belong to another agent's domain:
@@ -716,6 +819,7 @@ For suspicious patterns that need further investigation or belong to another age
 LEAD:
   title: <concise title>
   severity: <estimated severity>
+  confidence: high|medium|low
   file: <file path>
   line: <line number>
   bugClass: <bug class identifier>

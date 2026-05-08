@@ -575,11 +575,111 @@ let after_referral_fee = after_protocol_fee - after_protocol_fee * referral_fee 
 
 ---
 
+## Audit Checklist
+
+For each question below, check whether the code exhibits this pattern. If yes, develop into a full finding. If no, move on.
+
+### 4. Arithmetic
+
+**Overflow / Underflow**
+- Is `checked_add`, `checked_sub`, `checked_mul`, `checked_div` used for all user-influenced arithmetic?
+- Are overflow checks enabled in the release profile (`overflow-checks = true` in Cargo.toml)?
+- Can subtraction of balances, shares, or timestamps underflow to produce a large wrapping value?
+- Are type casts (e.g., `u128` to `u64`, `i64` to `u64`) checked with `try_into()` or validated for range?
+- Can intermediate calculations in multi-step formulas overflow even if the final result fits?
+
+**Precision / Rounding**
+- Is integer division performed last in compound expressions to minimize precision loss?
+- Are rounding directions consistent and favorable to the protocol?
+- Can repeated small operations accumulate rounding errors that become exploitable?
+- Can a first depositor exploit empty-pool share calculations (inflation attack)?
+- Is there a minimum deposit or share amount enforced to prevent dust-based precision attacks?
+
+**Slippage Protection**
+- Are user-supplied minimum output amounts enforced in swap and withdrawal operations?
+- Can sandwich attacks exploit the absence of slippage parameters?
+- Is the slippage check performed against the actual transferred amount (post-fees)?
+
+### 7. Reward / Staking Accounting
+
+**Reward Distribution**
+- Is the global reward index updated before any individual stake or unstake operation?
+- Can a user stake just before reward distribution and unstake just after, capturing a disproportionate share?
+- Are rewards calculated using a snapshot of the user's stake at the correct point in time?
+- Can a user claim rewards multiple times by manipulating account state?
+- Is the reward pool balance reconciled with the sum of all pending and claimed rewards?
+
+**Vault / Share Calculations**
+- Is the share price calculation protected against inflation/donation attacks?
+- Are virtual reserves or minimum initial deposits used to mitigate empty-vault edge cases?
+- Can a user deposit and withdraw in the same transaction to exploit share price rounding?
+- Are share-to-token and token-to-share conversions using the same formula bidirectionally?
+- Are deposits and withdrawals using consistent rounding directions?
+
+### 9. DeFi Patterns
+
+**AMM / Bonding Curves**
+- Is the constant-product (or other invariant) formula implemented correctly?
+- Can the pool be drained to zero on one side, causing division by zero?
+- Are bonding curve formulas monotonic and free from discontinuities?
+
+**Slippage / Fee Ordering**
+- Are fees deducted before or after the swap calculation, and is this consistent?
+- Is the slippage check performed against the final output amount after all fees?
+- Can rounding in fee calculations result in zero fees on small trades?
+
+**Oracle Integration**
+- Is the oracle account validated as belonging to the expected oracle program?
+- Are oracle price staleness checks enforced?
+- Is the oracle confidence interval or deviation band checked?
+- Can the oracle account be substituted with a different feed (wrong asset pair)?
+
+---
+
+### Step 11: Guard-Lift Analysis
+For each `require!`, `if ... return Err(...)`, `constraint =`, or guard predicate you encounter:
+1. Ask: "Does this imply a property that must hold across ALL call paths, not just here?"
+2. If yes, search for ALL callers/other functions that modify the same state
+3. If ANY caller lacks an equivalent guard, that gap is both an invariant violation AND a potential finding
+Example: if `withdraw` checks `balance >= amount`, find ALL other functions that modify `balance` and verify they maintain the invariant.
+
+### Step 12: Check Splitting
+Separate identification from assessment:
+- IDENTIFICATION (scanning): "There are N instances of [pattern] in this codebase" — list all with file:line
+- ASSESSMENT (analysis): "Of these N, finding M where [condition] because..."
+This prevents attention dilution. Report both the scan results and the assessment.
+
+### Step 13: Curiosity Principle
+For every externally-reachable instruction, ask:
+- What happens if I pass the same account twice for different parameters?
+- What happens at zero? At max value? At boundary conditions?
+- What if a CPI or oracle returns an unexpected result?
+- What if this instruction is called in the same transaction as another related instruction?
+- What if the account was just created? Just about to be closed?
+
+---
+
+### Output Discipline: Do-Not-Exploit Rule
+Name the asymmetry, the divergence, the missing check, the unusual pattern — then STOP.
+Do NOT fabricate elaborate multi-step exploit chains. Use language like:
+- "Worth checking whether..."
+- "This creates an asymmetry where..."
+- "This diverges from the expected invariant..."
+Let the validation agent and human auditor finish the chain.
+
+### Prescan Lead Disposition
+For each prescan lead relevant to your domain, you MUST either:
+- CONFIRM: develop it into a full FINDING with exploit scenario
+- DISMISS: note why it's a false positive (e.g., "guarded by check on line N")
+Do NOT silently ignore leads. Report your disposition in a summary at the end.
+
+---
+
 ## Dedup Key Format
 
-For each finding, construct a dedup key: `program | instruction | bug_class`
+For each finding, construct a dedup key: `program | instruction | bug_class | instance` where instance disambiguates multiple findings of the same class in the same instruction (e.g. the affected variable or line number).
 
-Example: `amm | swap | division_before_multiplication`
+Example: `amm | swap | division_before_multiplication | output_amount_calc`
 
 Before emitting a FINDING, verify that the bug class falls within your scope (listed above). If it belongs to another agent's domain, emit a LEAD instead.
 
@@ -593,12 +693,14 @@ For confirmed vulnerabilities with concrete proof:
 FINDING:
   title: <concise title>
   severity: critical|high|medium|low|informational
+  confidence: high|medium|low
   file: <file path>
   line: <line number>
   bugClass: <bug class identifier>
   description: <what the vulnerability is>
   proof: <specific code references showing the vulnerability>
   recommendation: <how to fix it>
+  detection: <how it was found: "checklist", "guard-lift", "lead-N", "manual">
 ```
 
 For suspicious patterns that need further investigation or belong to another agent's domain:
@@ -607,6 +709,7 @@ For suspicious patterns that need further investigation or belong to another age
 LEAD:
   title: <concise title>
   severity: <estimated severity>
+  confidence: high|medium|low
   file: <file path>
   line: <line number>
   bugClass: <bug class identifier>

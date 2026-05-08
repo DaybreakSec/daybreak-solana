@@ -2,12 +2,15 @@ import { useState, useEffect, useRef } from 'react';
 import AgentCard from '../components/AgentCard';
 import HorizonMeter from '../components/HorizonMeter';
 import TokenBudgetMeter from '../components/TokenBudgetMeter';
+import ThreatModelPanel from '../components/ThreatModelPanel';
 import SectionLabel from '../components/SectionLabel';
 import ActionButton from '../components/ActionButton';
-import { formatDuration } from '../utils/format';
+import { formatDuration, formatTokens, formatCost } from '../utils/format';
+import { useToast } from '../components/Toast';
 
 const AGENT_ORDER = [
   'scout',
+  'threat-model',
   'accounts-access',
   'cpi-token',
   'arithmetic-economic',
@@ -19,6 +22,7 @@ const AGENT_ORDER = [
 
 const AGENT_DISPLAY = {
   'scout': 'structural scout',
+  'threat-model': 'threat model',
   'accounts-access': 'accounts & access control',
   'cpi-token': 'cpi & token operations',
   'arithmetic-economic': 'arithmetic & economic',
@@ -33,11 +37,15 @@ export default function Audit({ onStatusChange }) {
   const [progress, setProgress] = useState(null);
   const [audit, setAudit] = useState(null);
   const [findings, setFindings] = useState([]);
+  const [threatModel, setThreatModel] = useState(null);
   const [logOpen, setLogOpen] = useState(false);
   const [logLines, setLogLines] = useState([]);
   const [tick, setTick] = useState(0);
   const [scanStatus, setScanStatus] = useState(null);
+  const [cancelling, setCancelling] = useState(false);
+  const [costData, setCostData] = useState(null);
   const completionFired = useRef(false);
+  const toast = useToast();
 
   useEffect(() => {
     fetch('/api/state/audit').then(r => r.json()).then(data => {
@@ -55,22 +63,86 @@ export default function Audit({ onStatusChange }) {
     return () => clearInterval(interval);
   }, [progress]);
 
+  // SSE for real-time progress, with polling fallback
   useEffect(() => {
     let active = true;
+    let sseConnected = false;
+
     function poll() {
       fetch('/api/state/progress').then(r => r.json()).then(data => {
         if (active) setProgress(data);
-      }).catch(() => {});
+      }).catch(err => toast('Failed to load progress: ' + err.message, 'error'));
       fetch('/api/findings').then(r => r.json()).then(data => {
         if (active) setFindings(data.findings || []);
       }).catch(() => {});
       fetch('/api/scan/status').then(r => r.json()).then(data => {
         if (active) setScanStatus(data);
       }).catch(() => {});
+      fetch('/api/state/threat-model').then(r => r.json()).then(data => {
+        if (active && data) setThreatModel(data);
+      }).catch(() => {});
     }
+
+    // Initial fetch
     poll();
-    const interval = setInterval(poll, 2000);
-    return () => { active = false; clearInterval(interval); };
+
+    // Try SSE connection
+    let es;
+    try {
+      es = new EventSource('/api/scan/events');
+
+      es.addEventListener('progress', (e) => {
+        if (!active) return;
+        sseConnected = true;
+        try { setProgress(JSON.parse(e.data)); } catch {}
+      });
+
+      es.addEventListener('log', (e) => {
+        if (!active) return;
+        try {
+          const { agent, line } = JSON.parse(e.data);
+          setLogLines(prev => [...prev.slice(-200), `[${agent}] ${line}`]);
+        } catch {}
+      });
+
+      es.addEventListener('finding', (e) => {
+        if (!active) return;
+        // Refresh findings from server to get full data
+        fetch('/api/findings').then(r => r.json()).then(data => {
+          if (active) setFindings(data.findings || []);
+        }).catch(() => {});
+      });
+
+      es.addEventListener('cost', (e) => {
+        if (!active) return;
+        try {
+          const data = JSON.parse(e.data);
+          setCostData(prev => ({
+            totalTokens: (prev?.totalTokens || 0) + (data.tokensUsed || 0),
+            totalCost: (prev?.totalCost || 0) + (data.costUsd || 0),
+          }));
+        } catch {}
+      });
+
+      es.addEventListener('done', () => {
+        if (!active) return;
+        poll(); // Final poll to get complete state
+      });
+    } catch {
+      // SSE not available, rely on polling
+    }
+
+    // Polling fallback — check sseConnected each tick so we slow down once SSE is live
+    const interval = setInterval(() => {
+      if (!active) return;
+      poll();
+    }, 5000);
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+      if (es) es.close();
+    };
   }, []);
 
   // Completion transition (5.2)
@@ -186,7 +258,25 @@ export default function Audit({ onStatusChange }) {
   async function retryPrescan() {
     try {
       await fetch('/api/scan/retry-prescan', { method: 'POST' });
-    } catch {}
+    } catch (err) {
+      toast('Failed to retry prescan: ' + err.message, 'error');
+    }
+  }
+
+  async function handleCancel() {
+    setCancelling(true);
+    try {
+      const res = await fetch('/api/scan/cancel', { method: 'POST' });
+      if (res.ok) {
+        toast('Scan cancelled', 'info');
+      } else {
+        const data = await res.json().catch(() => ({}));
+        toast(data.error || 'Failed to cancel scan', 'error');
+      }
+    } catch (err) {
+      toast('Failed to cancel: ' + err.message, 'error');
+    }
+    setCancelling(false);
   }
 
   return (
@@ -215,6 +305,15 @@ export default function Audit({ onStatusChange }) {
             />
             {isDone ? 'complete' : isScanning ? 'scanning' : progress?.phase || 'idle'}
           </span>
+          {isScanning && (
+            <ActionButton
+              onClick={handleCancel}
+              disabled={cancelling}
+              style={{ marginLeft: '8px' }}
+            >
+              {cancelling ? 'cancelling...' : 'cancel'}
+            </ActionButton>
+          )}
         </div>
         <p className="font-mono text-text-tertiary mt-1" style={{ fontSize: '13px' }}>
           {agentKeys.length} agents &middot; {loc.toLocaleString()} loc &middot; {frameworkLabel}
@@ -224,6 +323,9 @@ export default function Audit({ onStatusChange }) {
               {finishedAt && <> &middot; finished {formatTime(finishedAt)}</>}
               {totalDurationMs != null && <> &middot; {formatDuration(totalDurationMs)}</>}
             </>
+          )}
+          {costData && costData.totalTokens > 0 && (
+            <> &middot; {formatTokens(costData.totalTokens)} tokens &middot; {formatCost(costData.totalCost)}</>
           )}
         </p>
       </div>
@@ -286,6 +388,33 @@ export default function Audit({ onStatusChange }) {
           );
         })}
       </div>
+
+      {/* Threat Model Panel */}
+      <ThreatModelPanel
+        data={threatModel}
+        status={agents['threat-model']?.status}
+        onDownload={async () => {
+          try {
+            const res = await fetch('/api/export/threat-model', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: '{}',
+            });
+            const data = await res.json();
+            if (data.report) {
+              const blob = new Blob([data.report], { type: 'text/markdown' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `threat-model-${new Date().toISOString().split('T')[0]}.md`;
+              a.click();
+              URL.revokeObjectURL(url);
+            }
+          } catch (err) {
+            toast('Failed to download threat model: ' + err.message, 'error');
+          }
+        }}
+      />
 
       {/* Token budget meter */}
       <TokenBudgetMeter agents={agents} maxTokenBudget={audit?.maxTokenBudget || 0} />

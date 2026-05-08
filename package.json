@@ -9,12 +9,18 @@
   ],
   "scripts": {
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:mock": "node scripts/seed-mock-data.js && npm run dev",
+    "dev:mock:lan": "node scripts/seed-mock-data.js && concurrently \"npm run dev:server\" \"npx --workspace=client vite --host 0.0.0.0 --port 5174\"",
     "dev:server": "npm run dev --workspace=server",
     "dev:client": "npm run dev --workspace=client",
     "build": "npm run build --workspace=client",
-    "start": "npm run start --workspace=server"
+    "start": "npm run start --workspace=server",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "devDependencies": {
-    "concurrently": "^9.1.0"
+    "concurrently": "^9.1.0",
+    "supertest": "^7.2.2",
+    "vitest": "^4.1.5"
   }
 }

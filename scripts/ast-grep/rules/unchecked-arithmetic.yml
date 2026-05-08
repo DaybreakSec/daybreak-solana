@@ -1,19 +1,25 @@
 id: unchecked-arithmetic
 message: >-
-  Raw arithmetic operation detected. Solana programs should use checked_add,
-  checked_sub, checked_mul, or checked_div to prevent overflow/underflow panics
-  that can brick a program.
-severity: warning
+  Raw arithmetic on user-controlled or balance values. Solana programs should use
+  checked_add, checked_sub, checked_mul, or checked_div to prevent
+  overflow/underflow panics that can brick a program.
+severity: hint
 language: rust
 rule:
   any:
-    - pattern: $A + $B
-    - pattern: $A - $B
-    - pattern: $A * $B
+    - pattern: $A.checked_add($B).unwrap()
+    - pattern: $A.checked_sub($B).unwrap()
+    - pattern: $A.checked_mul($B).unwrap()
     - pattern: $A += $B
     - pattern: $A -= $B
     - pattern: $A *= $B
+  not:
+    inside:
+      any:
+        - kind: const_item
+        - kind: static_item
 note: >-
-  Consider using checked_add(), checked_sub(), checked_mul() or the equivalent
-  safe math operations. In Anchor, you can also use the require! macro with
-  overflow checks.
+  Consider using checked_add(), checked_sub(), checked_mul() and handling the
+  Option return, or use the require! macro with overflow checks in Anchor.
+  Bare .unwrap() on checked math can still panic. The += -= *= compound
+  assignment operators do not use checked math by default.

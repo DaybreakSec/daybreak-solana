@@ -1,7 +1,9 @@
-const { spawn, execSync } = require('child_process');
+const { spawn, execFileSync } = require('child_process');
+const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const { isValidGitUrl } = require('./path-validator');
 const {
   withLock, readFindings, writeFindings, readProgress, writeProgress, readJSON, writeJSON, writeScan,
 } = require('./state-io');
@@ -9,6 +11,8 @@ const { buildUserPrompt, readSystemPrompt } = require('./prompt-builder');
 const findingSchema = require('./finding-schema');
 const validationSchema = require('./validation-schema');
 const scoutSchema = require('./scout-schema');
+const threatModelSchema = require('./threat-model-schema');
+const bus = require('./event-bus');
 
 const AGENT_KEYS = [
   'accounts-access',
@@ -82,7 +86,16 @@ function spawnAgent(agentKey, systemPrompt, userPrompt, model, timeoutMs, schema
 
     const proc = spawn('claude', args, {
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, CLAUDECODE: '' },
+      env: {
+        PATH: process.env.PATH,
+        HOME: process.env.HOME,
+        USER: process.env.USER,
+        SHELL: process.env.SHELL,
+        LANG: process.env.LANG,
+        TERM: process.env.TERM,
+        ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+        CLAUDECODE: '',
+      },
     });
 
     // Track PID
@@ -94,7 +107,15 @@ function spawnAgent(agentKey, systemPrompt, userPrompt, model, timeoutMs, schema
     let stderr = '';
 
     proc.stdout.on('data', (d) => { stdout += d.toString(); });
-    proc.stderr.on('data', (d) => { stderr += d.toString(); });
+    proc.stderr.on('data', (d) => {
+      const chunk = d.toString();
+      stderr += chunk;
+      // Emit log lines for SSE
+      const lines = chunk.split('\n').filter(l => l.trim());
+      for (const line of lines) {
+        bus.emit('log', { agent: agentKey, line });
+      }
+    });
 
     // Write user prompt via stdin
     proc.stdin.write(userPrompt);
@@ -243,6 +264,7 @@ async function updateAgentProgress(agentKey, update) {
     if (!progress.agents) progress.agents = {};
     progress.agents[agentKey] = { ...progress.agents[agentKey], ...update };
     writeProgress(progress);
+    bus.emit('progress', progress);
   });
 }
 
@@ -384,35 +406,57 @@ async function runValidation(targetDir, scope, audit, model, timeoutMs) {
  * Resolve the target directory. For git mode, clone if needed.
  * Returns the filesystem path to the project root.
  */
+const BLOCKED_DIRS = ['/etc', '/var', '/proc', '/sys', '/dev', '/root'];
+
 function resolveTargetDir(audit) {
   if (audit.localPath) {
-    if (!fs.existsSync(audit.localPath)) {
-      throw new Error(`Local path does not exist: ${audit.localPath}`);
+    const resolved = path.resolve(audit.localPath);
+
+    // Block system directories
+    for (const blocked of BLOCKED_DIRS) {
+      if (resolved === blocked || resolved.startsWith(blocked + '/')) {
+        throw new Error(`Blocked: localPath cannot point to system directory: ${blocked}`);
+      }
     }
-    return audit.localPath;
+
+    if (!fs.existsSync(resolved)) {
+      throw new Error(`Local path does not exist: ${resolved}`);
+    }
+
+    const stat = fs.lstatSync(resolved);
+    if (!stat.isDirectory()) {
+      throw new Error(`Local path is not a directory: ${resolved}`);
+    }
+
+    return resolved;
   }
 
   if (audit.mode === 'git' && audit.repoUrl) {
-    // Derive a stable clone directory from the repo URL
-    const repoName = audit.repoUrl.replace(/\.git$/, '').split('/').pop() || 'repo';
-    const cloneDir = path.join(os.tmpdir(), `daybreak-clone-${repoName}`);
+    const url = audit.repoUrl;
+    if (!isValidGitUrl(url)) {
+      throw new Error('Invalid git URL: only https:// URLs from known hosts are allowed');
+    }
+
+    // Derive a stable clone directory with hash suffix to prevent name injection + path prediction
+    const safeName = (url.replace(/\.git$/, '').split('/').pop() || 'repo').replace(/[^a-zA-Z0-9_-]/g, '');
+    const hash = crypto.createHash('sha256').update(url).digest('hex').slice(0, 12);
+    const cloneDir = path.join(os.tmpdir(), `daybreak-${safeName}-${hash}`);
 
     if (fs.existsSync(path.join(cloneDir, '.git'))) {
       // Already cloned — pull latest
       console.log(`Git repo already cloned at ${cloneDir}, pulling latest...`);
       try {
-        execSync('git pull --ff-only', { cwd: cloneDir, stdio: 'pipe', timeout: 60000 });
+        execFileSync('git', ['pull', '--ff-only'], { cwd: cloneDir, stdio: 'pipe', timeout: 60000 });
       } catch {
         console.warn('git pull failed, using existing clone');
       }
     } else {
       // Fresh clone
-      console.log(`Cloning ${audit.repoUrl} to ${cloneDir}...`);
-      execSync(`git clone --depth 1 ${audit.repoUrl} ${cloneDir}`, { stdio: 'pipe', timeout: 120000 });
+      console.log(`Cloning ${url} to ${cloneDir}...`);
+      execFileSync('git', ['clone', '--depth', '1', url, cloneDir], { stdio: 'pipe', timeout: 120000 });
+      fs.chmodSync(cloneDir, 0o700);
     }
 
-    // If scopeNotes mentions a subdirectory (e.g., "Week 4 FrankSol"), try to detect it
-    // Otherwise use clone root
     const localPath = cloneDir;
 
     // Write localPath back to audit.json so future runs don't re-clone
@@ -497,6 +541,99 @@ async function runScout(targetDir, scope, audit, model, timeoutMs) {
       currentFile: null,
     });
     return null;
+  }
+}
+
+/**
+ * Run the threat model agent using scout output + prescan structural data.
+ * Runs in parallel with scanning agents (no source code needed).
+ */
+async function runThreatModel(scoutOutput, stateDir, scope, audit, timeoutMs) {
+  const systemPrompt = readSystemPrompt('threat-model');
+
+  // Gather prescan structural data
+  const accounts = readJSON('accounts.json') || [];
+  const cpis = readJSON('cpis.json') || [];
+  const pdas = readJSON('pdas.json') || [];
+  const oracles = readJSON('oracles.json') || [];
+  const valueFlows = readJSON('value-flows.json') || [];
+  const stateMachines = readJSON('state-machines.json') || [];
+
+  const parts = [];
+  parts.push('## Audit Context');
+  parts.push(`Framework: ${scope.framework || 'anchor'} | Total LOC: ${(scope.files || []).reduce((s, f) => s + (f.loc || 0), 0)}`);
+  parts.push('');
+
+  // Scout structural mapping
+  parts.push('## Scout Structural Mapping');
+  parts.push('```json');
+  parts.push(JSON.stringify(scoutOutput, null, 2));
+  parts.push('```');
+  parts.push('');
+
+  // Prescan structural data
+  const structural = { accounts, cpis, pdas, oracles, valueFlows, stateMachines };
+  const hasStructural = Object.values(structural).some(d => Array.isArray(d) && d.length > 0);
+  if (hasStructural) {
+    parts.push('## Prescan Structural Data');
+    for (const [name, data] of Object.entries(structural)) {
+      if (Array.isArray(data) && data.length > 0) {
+        const label = name.replace(/([A-Z])/g, ' $1').trim();
+        parts.push(`### ${label}`);
+        parts.push('```json');
+        parts.push(JSON.stringify(data, null, 2));
+        parts.push('```');
+      }
+    }
+    parts.push('');
+  }
+
+  const userPrompt = parts.join('\n');
+
+  await updateAgentProgress('threat-model', {
+    status: 'scanning',
+    startedAt: new Date().toISOString(),
+    currentFile: 'building threat model...',
+  });
+
+  try {
+    const result = await runAgentWithRetry('threat-model', systemPrompt, userPrompt, 'haiku', timeoutMs, threatModelSchema);
+    const threatModel = result.structured_output || {};
+    const tokensUsed = (result.usage?.input_tokens || 0) + (result.usage?.output_tokens || 0);
+    const costUsd = result.total_cost_usd || 0;
+    const durationMs = result.duration_ms || 0;
+
+    // Save threat model to state
+    writeJSON('threat-model.json', threatModel);
+
+    const durationStr = durationMs >= 60000
+      ? `${(durationMs / 60000).toFixed(1)}m`
+      : `${(durationMs / 1000).toFixed(1)}s`;
+
+    const threatCount = (threatModel.threatCategories || []).reduce(
+      (sum, cat) => sum + (cat.threats || []).length, 0
+    );
+
+    await updateAgentProgress('threat-model', {
+      status: 'complete',
+      duration: durationStr,
+      durationMs,
+      tokensUsed,
+      costUsd,
+      findings: threatCount,
+      currentFile: null,
+      startedAt: undefined,
+    });
+
+    bus.emit('cost', { agent: 'threat-model', tokensUsed, costUsd });
+    console.log(`Threat model: ${threatCount} threats, ${(threatModel.attackNarratives || []).length} narratives, ${durationStr}, ${tokensUsed} tokens`);
+  } catch (err) {
+    console.error(`Threat model agent failed: ${err.message}`);
+    await updateAgentProgress('threat-model', {
+      status: 'error',
+      error: err.message,
+      currentFile: null,
+    });
   }
 }
 
@@ -711,8 +848,10 @@ async function runSynthesis(targetDir, scope, audit, model, timeoutMs) {
 async function startPipeline(audit, scope) {
   const stateDir = require('./state-io').getStateDir();
   const targetDir = resolveTargetDir(audit);
-  const model = audit.model || 'sonnet';
-  const timeoutMs = audit.agentTimeoutMs || 900000; // 15 min default
+  const ALLOWED_MODELS = ['sonnet', 'opus', 'haiku', 'claude-3-5-sonnet-20241022', 'claude-3-opus-20240229', 'claude-3-haiku-20240307'];
+  const rawModel = audit.model || 'sonnet';
+  const model = ALLOWED_MODELS.includes(rawModel) ? rawModel : 'sonnet';
+  const timeoutMs = Math.min(Math.max(audit.agentTimeoutMs || 900000, 60_000), 3_600_000);
 
   // Initialize active scan
   activeScan = {
@@ -733,6 +872,7 @@ async function startPipeline(audit, scope) {
     prescanWarning: null,
   };
   initialProgress.agents['scout'] = { status: 'queued' };
+  initialProgress.agents['threat-model'] = { status: 'queued' };
   for (const key of AGENT_KEYS) {
     initialProgress.agents[key] = { status: 'queued' };
   }
@@ -743,6 +883,23 @@ async function startPipeline(audit, scope) {
 
   // Clear previous findings
   writeFindings({ findings: [] });
+
+  // Token budget tracking
+  const maxBudget = audit.maxTokenBudget || Infinity;
+  let totalTokensUsed = 0;
+
+  function isBudgetExceeded() {
+    return isFinite(maxBudget) && totalTokensUsed >= maxBudget;
+  }
+
+  function checkBudgetWarning() {
+    if (isFinite(maxBudget) && totalTokensUsed >= maxBudget * 0.8) {
+      bus.emit('progress', {
+        ...readProgress(),
+        budgetWarning: `Token usage at ${Math.round((totalTokensUsed / maxBudget) * 100)}% of budget`,
+      });
+    }
+  }
 
   // Step 1: Prescan
   const prescanResult = await runPrescan(targetDir, stateDir);
@@ -774,6 +931,11 @@ async function startPipeline(audit, scope) {
     p.phase = 'scanning';
     writeProgress(p);
   });
+
+  // Spawn threat model agent in parallel with scanning agents
+  const threatModelPromise = scoutOutput
+    ? runThreatModel(scoutOutput, stateDir, scope, audit, timeoutMs)
+    : Promise.resolve();
 
   const agentPromises = AGENT_KEYS.map(async (agentKey) => {
     // Check if cancelled
@@ -832,6 +994,12 @@ async function startPipeline(audit, scope) {
       });
 
       console.log(`Agent ${agentKey}: ${findings.length} findings (${addedCount} after dedup), ${durationStr}, ${tokensUsed} tokens`);
+
+      // Emit SSE events for cost and findings
+      bus.emit('cost', { agent: agentKey, tokensUsed, costUsd });
+      if (addedCount > 0) {
+        bus.emit('finding', { agent: agentKey, count: addedCount });
+      }
     } catch (err) {
       console.error(`Agent ${agentKey} failed: ${err.message}`);
 
@@ -843,9 +1011,23 @@ async function startPipeline(audit, scope) {
     }
   });
 
-  await Promise.all(agentPromises);
+  await Promise.all([...agentPromises, threatModelPromise]);
+
+  // Tally tokens used so far
+  const postScanProgress = readProgress();
+  for (const key of [...AGENT_KEYS, 'scout', 'threat-model']) {
+    totalTokensUsed += postScanProgress.agents?.[key]?.tokensUsed || 0;
+  }
+  checkBudgetWarning();
 
   if (!activeScan || !activeScan.running) return;
+
+  // Budget check: if over budget, skip to validation
+  if (isBudgetExceeded()) {
+    console.log(`Token budget exceeded (${totalTokensUsed}/${maxBudget}). Skipping deepening and synthesis.`);
+    await updateAgentProgress('deepening', { status: 'complete', duration: '0s', findings: 0, currentFile: null, error: 'skipped — token budget exceeded' });
+    await updateAgentProgress('synthesis', { status: 'complete', duration: '0s', findings: 0, currentFile: null, error: 'skipped — token budget exceeded' });
+  } else {
 
   // Step 4: Deepening phase — re-analyze high/critical findings
   await withLock(() => {
@@ -856,25 +1038,38 @@ async function startPipeline(audit, scope) {
 
   await runDeepening(targetDir, scope, audit, model, timeoutMs);
 
+  // Update token tally after deepening
+  const postDeepeningProgress = readProgress();
+  totalTokensUsed += postDeepeningProgress.agents?.deepening?.tokensUsed || 0;
+  checkBudgetWarning();
+
   if (!activeScan || !activeScan.running) return;
 
-  // Step 5: Synthesis phase — cross-agent compound vulnerability detection
-  const findingsData = readFindings();
-  if (findingsData.findings.length > 0) {
-    await withLock(() => {
-      const p = readProgress();
-      p.phase = 'synthesizing';
-      writeProgress(p);
-    });
-    await runSynthesis(targetDir, scope, audit, model, timeoutMs);
+  // Budget check before synthesis
+  if (isBudgetExceeded()) {
+    console.log(`Token budget exceeded after deepening (${totalTokensUsed}/${maxBudget}). Skipping synthesis.`);
+    await updateAgentProgress('synthesis', { status: 'complete', duration: '0s', findings: 0, currentFile: null, error: 'skipped — token budget exceeded' });
   } else {
-    await updateAgentProgress('synthesis', {
-      status: 'complete',
-      duration: '0s',
-      findings: 0,
-      currentFile: null,
-    });
-  }
+    // Step 5: Synthesis phase — cross-agent compound vulnerability detection
+    const findingsData = readFindings();
+    if (findingsData.findings.length > 0) {
+      await withLock(() => {
+        const p = readProgress();
+        p.phase = 'synthesizing';
+        writeProgress(p);
+      });
+      await runSynthesis(targetDir, scope, audit, model, timeoutMs);
+    } else {
+      await updateAgentProgress('synthesis', {
+        status: 'complete',
+        duration: '0s',
+        findings: 0,
+        currentFile: null,
+      });
+    }
+  } // end budget-check synthesis
+
+  } // end budget-check deepening+synthesis
 
   if (!activeScan || !activeScan.running) return;
 
@@ -909,6 +1104,10 @@ async function startPipeline(audit, scope) {
       writeProgress(p);
     });
   }
+
+  // Emit done event for SSE
+  const finalProgress = readProgress();
+  bus.emit('done', { phase: finalProgress.phase });
 
   // Clear scan state
   activeScan.running = false;
@@ -993,4 +1192,7 @@ module.exports = {
   cleanup,
   runPrescan,
   AGENT_KEYS,
+  resolveTargetDir,
+  isRealFinding,
+  normalizeFilePath,
 };

@@ -63,21 +63,24 @@ for rule_file in "$RULES_DIR"/*.yml "$RULES_DIR"/*.yaml; do
     fi
 
     # Parse each match from the JSON array and normalize
-    normalized=$(python3 -c "
+    # Pipe result via stdin instead of shell interpolation to avoid injection
+    normalized=$(echo "$result" | python3 -c "
 import json, sys
 
 try:
-    matches = json.loads('''$result''')
+    matches = json.load(sys.stdin)
 except Exception:
     sys.exit(0)
 
 if not isinstance(matches, list):
     sys.exit(0)
 
+rule_name = sys.argv[1] if len(sys.argv) > 1 else 'unknown'
+
 for m in matches:
     entry = {
-        'rule': '$rule_name',
-        'id': m.get('ruleId', '$rule_name'),
+        'rule': rule_name,
+        'id': m.get('ruleId', rule_name),
         'severity': m.get('severity', 'warning'),
         'message': m.get('message', ''),
         'file': m.get('file', ''),
@@ -85,7 +88,7 @@ for m in matches:
         'snippet': m.get('text', '')[:200],
     }
     print(json.dumps(entry))
-" 2>/dev/null) || true
+" "$rule_name" 2>/dev/null) || true
 
     # Append each line as an element
     while IFS= read -r entry; do

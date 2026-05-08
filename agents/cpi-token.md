@@ -514,11 +514,99 @@ let ata = get_associated_token_address_with_program_id(
 
 ---
 
+## Audit Checklist
+
+For each question below, check whether the code exhibits this pattern. If yes, develop into a full finding. If no, move on.
+
+### 3. CPI Security
+
+**Program ID Verification**
+- Is the target program ID of every CPI validated against a hardcoded or on-chain-stored expected value?
+- Can an attacker substitute a malicious program where the Token Program, System Program, or another trusted program is expected?
+- Are program accounts typed as `Program<'info, T>` (Anchor) rather than `UncheckedAccount` or raw `AccountInfo`?
+- For programs that interact with both Token Program and Token-2022, is the correct program ID resolved per-mint?
+
+**Data Freshness After CPI**
+- After a CPI that modifies an account, is the account data reloaded before further use (Anchor's `reload()`)?
+- Can stale cached data after a CPI lead to incorrect balance or state calculations?
+- Are lamport balances re-read after CPI transfers to prevent double-counting?
+
+**Signer Privilege**
+- Are PDA signer seeds correct and minimal for CPI `invoke_signed` calls?
+- Can a CPI inadvertently escalate privileges by passing signer seeds that grant authority over unintended accounts?
+- Can an attacker invoke the program in a way that causes the PDA to sign a malicious CPI?
+
+**Return Value Handling**
+- Are CPI return values (via `get_return_data`) validated for the correct program ID origin?
+- Can return data from a previous CPI be mistakenly consumed as the result of a different CPI?
+
+### 6. Token Handling
+
+**SPL Token Safety**
+- Are mint and token account relationships validated (token_account.mint == expected_mint)?
+- Is the token account authority validated against the expected owner/delegate?
+- Are token transfers using the correct authority (owner vs delegate)?
+- Can a wrong mint be substituted to inflate or deflate amounts due to decimal differences?
+- Are associated token accounts derived and validated correctly using the ATA program?
+- Are `approve` and `revoke` delegate operations handled safely?
+
+**Token-2022 Compatibility**
+- Does the program support both Token Program and Token-2022, and is the correct program resolved per-mint?
+- Are transfer hooks accounted for (Token-2022 mints can have mandatory hooks)?
+- Are permanent delegate extensions considered?
+- Is the `mint_close_authority` extension checked?
+
+**Fee-on-Transfer / Extensions**
+- Are transfer fee extensions (Token-2022) accounted for?
+- Does the program use the actual received amount (post-fee) for internal accounting?
+- Can interest-bearing token extensions cause amount discrepancies?
+
+---
+
+### Step 11: Guard-Lift Analysis
+For each `require!`, `if ... return Err(...)`, `constraint =`, or guard predicate you encounter:
+1. Ask: "Does this imply a property that must hold across ALL call paths, not just here?"
+2. If yes, search for ALL callers/other functions that modify the same state
+3. If ANY caller lacks an equivalent guard, that gap is both an invariant violation AND a potential finding
+Example: if `withdraw` checks `balance >= amount`, find ALL other functions that modify `balance` and verify they maintain the invariant.
+
+### Step 12: Check Splitting
+Separate identification from assessment:
+- IDENTIFICATION (scanning): "There are N instances of [pattern] in this codebase" — list all with file:line
+- ASSESSMENT (analysis): "Of these N, finding M where [condition] because..."
+This prevents attention dilution. Report both the scan results and the assessment.
+
+### Step 13: Curiosity Principle
+For every externally-reachable instruction, ask:
+- What happens if I pass the same account twice for different parameters?
+- What happens at zero? At max value? At boundary conditions?
+- What if a CPI or oracle returns an unexpected result?
+- What if this instruction is called in the same transaction as another related instruction?
+- What if the account was just created? Just about to be closed?
+
+---
+
+### Output Discipline: Do-Not-Exploit Rule
+Name the asymmetry, the divergence, the missing check, the unusual pattern — then STOP.
+Do NOT fabricate elaborate multi-step exploit chains. Use language like:
+- "Worth checking whether..."
+- "This creates an asymmetry where..."
+- "This diverges from the expected invariant..."
+Let the validation agent and human auditor finish the chain.
+
+### Prescan Lead Disposition
+For each prescan lead relevant to your domain, you MUST either:
+- CONFIRM: develop it into a full FINDING with exploit scenario
+- DISMISS: note why it's a false positive (e.g., "guarded by check on line N")
+Do NOT silently ignore leads. Report your disposition in a summary at the end.
+
+---
+
 ## Dedup Key Format
 
-For each finding, construct a dedup key: `program | instruction | bug_class`
+For each finding, construct a dedup key: `program | instruction | bug_class | instance` where instance disambiguates multiple findings of the same class in the same instruction (e.g. the affected account name or line number).
 
-Example: `token_vault | deposit | unverified_cpi_program`
+Example: `token_vault | deposit | unverified_cpi_program | token_program`
 
 Before emitting a FINDING, verify that the bug class falls within your scope (listed above). If it belongs to another agent's domain, emit a LEAD instead.
 
@@ -532,12 +620,14 @@ For confirmed vulnerabilities with concrete proof:
 FINDING:
   title: <concise title>
   severity: critical|high|medium|low|informational
+  confidence: high|medium|low
   file: <file path>
   line: <line number>
   bugClass: <bug class identifier>
   description: <what the vulnerability is>
   proof: <specific code references showing the vulnerability>
   recommendation: <how to fix it>
+  detection: <how it was found: "checklist", "guard-lift", "lead-N", "manual">
 ```
 
 For suspicious patterns that need further investigation or belong to another agent's domain:
@@ -546,6 +636,7 @@ For suspicious patterns that need further investigation or belong to another age
 LEAD:
   title: <concise title>
   severity: <estimated severity>
+  confidence: high|medium|low
   file: <file path>
   line: <line number>
   bugClass: <bug class identifier>

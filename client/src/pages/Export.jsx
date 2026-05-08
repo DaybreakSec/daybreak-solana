@@ -2,35 +2,58 @@ import { useState, useEffect } from 'react';
 import SectionLabel from '../components/SectionLabel';
 import SeverityBadge from '../components/SeverityBadge';
 import ActionButton from '../components/ActionButton';
-import CodeBlock from '../components/CodeBlock';
+import MarkdownProse from '../components/MarkdownProse';
+import { useToast } from '../components/Toast';
+import { useRequireState } from '../hooks/useRouteGuard';
+
+const SEVERITIES = ['critical', 'high', 'medium', 'low', 'informational'];
 
 export default function Export() {
+  const toast = useToast();
+  const { loading: guardLoading } = useRequireState('findings', '/');
   const [findings, setFindings] = useState([]);
   const [selected, setSelected] = useState(new Set());
   const [selectionMode, setSelectionMode] = useState('all');
+  const [selectedSeverities, setSelectedSeverities] = useState(new Set(SEVERITIES));
   const [format, setFormat] = useState('markdown');
+  const [includeThreatModel, setIncludeThreatModel] = useState(false);
   const [repo, setRepo] = useState('');
   const [report, setReport] = useState('');
   const [exportResult, setExportResult] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [repoError, setRepoError] = useState('');
+  const [audit, setAudit] = useState(null);
+
+  useEffect(() => {
+    fetch('/api/state/audit').then(r => r.json()).then(data => {
+      if (data) setAudit(data);
+    }).catch(err => toast('Failed to load audit state: ' + err.message, 'error'));
+  }, []);
 
   useEffect(() => {
     fetch('/api/findings?status=valid')
-      .then(r => r.json())
+      .then(r => {
+        if (!r.ok) throw new Error(`Server returned ${r.status}`);
+        return r.json();
+      })
       .then(data => {
         const f = data.findings || [];
         setFindings(f);
         setSelected(new Set(f.map(x => x.id)));
       })
-      .catch(() => {});
+      .catch(err => toast('Failed to load findings: ' + err.message, 'error'));
   }, []);
 
-  // update selection based on mode
+  // Update selection based on mode
   useEffect(() => {
     if (selectionMode === 'all') {
       setSelected(new Set(findings.map(f => f.id)));
+    } else if (selectionMode === 'by-severity') {
+      setSelected(new Set(
+        findings.filter(f => selectedSeverities.has(f.severity)).map(f => f.id)
+      ));
     }
-  }, [selectionMode, findings]);
+  }, [selectionMode, findings, selectedSeverities]);
 
   function toggleSelection(id) {
     setSelected(prev => {
@@ -41,7 +64,25 @@ export default function Export() {
     });
   }
 
+  function toggleSeverity(sev) {
+    setSelectedSeverities(prev => {
+      const next = new Set(prev);
+      if (next.has(sev)) next.delete(sev);
+      else next.add(sev);
+      return next;
+    });
+  }
+
   async function handleExport() {
+    setRepoError('');
+
+    if (format === 'github') {
+      if (!/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(repo)) {
+        setRepoError('Repository must be in owner/repo format');
+        return;
+      }
+    }
+
     setLoading(true);
     setExportResult(null);
     setReport('');
@@ -58,18 +99,41 @@ export default function Export() {
         setExportResult(await res.json());
       } catch (err) {
         setExportResult({ error: err.message });
+        toast('Export failed: ' + err.message, 'error');
       }
-    } else {
+    } else if (format === 'json') {
       try {
-        const res = await fetch('/api/export/report', {
+        const res = await fetch('/api/export/json', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ findingIds: ids }),
         });
         const data = await res.json();
+        const blob = new Blob([JSON.stringify(data.findings, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `audit-findings-${new Date().toISOString().split('T')[0]}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        toast('JSON file downloaded', 'success');
+      } catch (err) {
+        toast('JSON export failed: ' + err.message, 'error');
+      }
+    } else if (format === 'print') {
+      window.print();
+    } else {
+      // markdown
+      try {
+        const res = await fetch('/api/export/report', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ findingIds: ids, includeThreatModel }),
+        });
+        const data = await res.json();
         setReport(data.report || '');
       } catch (err) {
-        setReport(`error: ${err.message}`);
+        toast('Report generation failed: ' + err.message, 'error');
       }
     }
     setLoading(false);
@@ -92,7 +156,7 @@ export default function Export() {
     <div>
       {/* Header */}
       <div className="mb-6">
-        <SectionLabel>audit 003 · export</SectionLabel>
+        <SectionLabel>audit · {audit?.repoUrl?.split('/').pop()?.replace('.git', '') || audit?.localPath?.split('/').pop() || 'export'}</SectionLabel>
         <h1
           className="font-display text-text-primary mt-1"
           style={{ fontSize: '28px', lineHeight: '1.15', fontWeight: 500 }}
@@ -118,13 +182,33 @@ export default function Export() {
                     onChange={() => setSelectionMode(m)}
                     className="accent-[var(--color-dawn-amber)]"
                   />
-                  <span className="font-mono text-text-secondary" style={{ fontSize: '11px' }}>
+                  <span className="font-mono text-text-secondary" style={{ fontSize: '13px' }}>
                     {m === 'all' ? 'all valid' : m === 'manual' ? 'manual select' : 'by severity'}
                   </span>
                 </label>
               ))}
             </div>
           </div>
+
+          {/* By-severity checkboxes */}
+          {selectionMode === 'by-severity' && (
+            <div className="space-y-1">
+              {SEVERITIES.map(sev => (
+                <label key={sev} className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={selectedSeverities.has(sev)}
+                    onChange={() => toggleSeverity(sev)}
+                    className="accent-[var(--color-dawn-amber)]"
+                  />
+                  <SeverityBadge severity={sev} />
+                  <span className="font-mono text-text-secondary" style={{ fontSize: '13px' }}>
+                    ({findings.filter(f => f.severity === sev).length})
+                  </span>
+                </label>
+              ))}
+            </div>
+          )}
 
           {/* Manual selection list */}
           {selectionMode === 'manual' && (
@@ -143,7 +227,7 @@ export default function Export() {
                   <SeverityBadge severity={f.severity} />
                   <span
                     className="font-mono text-text-secondary truncate"
-                    style={{ fontSize: '11px' }}
+                    style={{ fontSize: '13px' }}
                   >
                     {f.title}
                   </span>
@@ -159,7 +243,8 @@ export default function Export() {
               {[
                 { key: 'github', label: 'github issues' },
                 { key: 'markdown', label: 'markdown report' },
-                { key: 'pdf', label: 'pdf report' },
+                { key: 'json', label: 'json export' },
+                { key: 'print', label: 'print / pdf' },
               ].map(f => (
                 <label key={f.key} className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -169,12 +254,61 @@ export default function Export() {
                     onChange={() => setFormat(f.key)}
                     className="accent-[var(--color-dawn-amber)]"
                   />
-                  <span className="font-mono text-text-secondary" style={{ fontSize: '11px' }}>
+                  <span className="font-mono text-text-secondary" style={{ fontSize: '13px' }}>
                     {f.label}
                   </span>
                 </label>
               ))}
             </div>
+          </div>
+
+          {/* Threat model options */}
+          <div>
+            <SectionLabel>threat model</SectionLabel>
+            <div className="mt-2 space-y-1">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={includeThreatModel}
+                  onChange={() => setIncludeThreatModel(!includeThreatModel)}
+                  className="accent-[var(--color-dawn-amber)]"
+                />
+                <span className="font-mono text-text-secondary" style={{ fontSize: '13px' }}>
+                  include in report
+                </span>
+              </label>
+            </div>
+            <ActionButton
+              onClick={async () => {
+                try {
+                  const res = await fetch('/api/export/threat-model', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: '{}',
+                  });
+                  const data = await res.json();
+                  if (data.error) {
+                    toast(data.error, 'error');
+                    return;
+                  }
+                  if (data.report) {
+                    const blob = new Blob([data.report], { type: 'text/markdown' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `threat-model-${new Date().toISOString().split('T')[0]}.md`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    toast('Threat model downloaded', 'success');
+                  }
+                } catch (err) {
+                  toast('Failed to download threat model: ' + err.message, 'error');
+                }
+              }}
+              style={{ width: '100%', justifyContent: 'center', marginTop: '8px' }}
+            >
+              download threat model .md
+            </ActionButton>
           </div>
 
           {/* GitHub repo input */}
@@ -188,7 +322,7 @@ export default function Export() {
                 placeholder="owner/repo"
                 className="w-full font-mono text-text-primary mt-2"
                 style={{
-                  fontSize: '12px',
+                  fontSize: '14px',
                   padding: '8px 0',
                   border: 'none',
                   borderBottom: '0.5px solid var(--color-border-default)',
@@ -196,6 +330,11 @@ export default function Export() {
                   background: 'transparent',
                 }}
               />
+              {repoError && (
+                <p className="font-mono text-dawn-coral mt-1" style={{ fontSize: '13px' }}>
+                  {repoError}
+                </p>
+              )}
             </div>
           )}
 
@@ -206,7 +345,7 @@ export default function Export() {
             disabled={loading || selected.size === 0 || (format === 'github' && !repo)}
             style={{ width: '100%', justifyContent: 'center' }}
           >
-            {loading ? 'exporting...' : 'export →'}
+            {loading ? 'exporting...' : format === 'print' ? 'print / save pdf' : 'export →'}
           </ActionButton>
 
           {report && (
@@ -217,7 +356,7 @@ export default function Export() {
 
           {/* GitHub export results */}
           {exportResult && (
-            <div className="font-mono" style={{ fontSize: '11px' }}>
+            <div className="font-mono" style={{ fontSize: '13px' }}>
               {exportResult.error ? (
                 <p className="text-dawn-coral">{exportResult.error}</p>
               ) : (
@@ -233,7 +372,7 @@ export default function Export() {
 
         {/* Preview column */}
         <div
-          className="bg-bg-elevated overflow-y-auto"
+          className="bg-bg-elevated overflow-y-auto print-preview"
           style={{
             borderRadius: 'var(--radius-xl)',
             border: '0.5px solid var(--color-border-default)',
@@ -242,7 +381,11 @@ export default function Export() {
           }}
         >
           {report ? (
-            <ReportPreview report={report} />
+            <MarkdownProse
+              text={report}
+              className="text-text-secondary"
+              style={{ fontSize: '15px', lineHeight: '1.65' }}
+            />
           ) : (
             <PreviewFindings findings={selectedFindings} />
           )}
@@ -255,7 +398,7 @@ export default function Export() {
 function PreviewFindings({ findings }) {
   if (findings.length === 0) {
     return (
-      <p className="font-mono text-text-tertiary text-center py-10" style={{ fontSize: '11px' }}>
+      <p className="font-mono text-text-tertiary text-center py-10" style={{ fontSize: '13px' }}>
         select findings to preview export
       </p>
     );
@@ -270,80 +413,22 @@ function PreviewFindings({ findings }) {
         <div key={f.id} className="pb-4" style={{ borderBottom: '0.5px solid var(--color-border-subtle)' }}>
           <div className="flex items-center gap-2 mb-1">
             <SeverityBadge severity={f.severity} />
-            <span className="font-mono text-text-tertiary" style={{ fontSize: '11px' }}>{f.id}</span>
+            <span className="font-mono text-text-tertiary" style={{ fontSize: '13px' }}>{f.id}</span>
           </div>
           <h3
             className="font-display text-text-primary"
-            style={{ fontSize: '15px', fontWeight: 500, lineHeight: '1.35' }}
+            style={{ fontSize: '17px', fontWeight: 500, lineHeight: '1.35' }}
           >
             {f.title}
           </h3>
           <p
             className="font-sans text-text-secondary mt-1"
-            style={{ fontSize: '13.5px', lineHeight: '1.65' }}
+            style={{ fontSize: '17px', lineHeight: '1.65' }}
           >
             {f.description}
           </p>
         </div>
       ))}
-    </div>
-  );
-}
-
-function ReportPreview({ report }) {
-  // render markdown-ish preview with daybreak styling
-  const lines = report.split('\n');
-
-  return (
-    <div className="space-y-2">
-      {lines.map((line, i) => {
-        if (line.startsWith('# ')) {
-          return (
-            <h1 key={i} className="font-display text-text-primary" style={{ fontSize: '22px', fontWeight: 500, lineHeight: '1.2' }}>
-              {line.slice(2)}
-            </h1>
-          );
-        }
-        if (line.startsWith('## ')) {
-          return (
-            <h2 key={i} className="font-display text-text-primary mt-4" style={{ fontSize: '19px', fontWeight: 500, lineHeight: '1.25' }}>
-              {line.slice(3)}
-            </h2>
-          );
-        }
-        if (line.startsWith('### ')) {
-          return (
-            <h3 key={i} className="font-display text-text-primary mt-3" style={{ fontSize: '15px', fontWeight: 500, lineHeight: '1.35' }}>
-              {line.slice(4)}
-            </h3>
-          );
-        }
-        if (line.startsWith('```')) {
-          return null; // code fence markers
-        }
-        if (line.startsWith('- ') || line.startsWith('* ')) {
-          return (
-            <p key={i} className="font-sans text-text-secondary pl-4" style={{ fontSize: '13.5px', lineHeight: '1.65' }}>
-              • {line.slice(2)}
-            </p>
-          );
-        }
-        if (line.startsWith('|')) {
-          return (
-            <p key={i} className="font-mono text-text-secondary" style={{ fontSize: '11px' }}>
-              {line}
-            </p>
-          );
-        }
-        if (line.trim() === '') {
-          return <div key={i} className="h-2" />;
-        }
-        return (
-          <p key={i} className="font-sans text-text-secondary" style={{ fontSize: '13.5px', lineHeight: '1.65' }}>
-            {line}
-          </p>
-        );
-      })}
     </div>
   );
 }

@@ -43,7 +43,7 @@ export default function AppFrame({ children, status = 'idle' }) {
             <span className="text-text-tertiary" style={{ fontSize: '14px' }}>/</span>
             <span
               className="font-mono text-text-tertiary"
-              style={{ fontSize: '11px', letterSpacing: '0.04em' }}
+              style={{ fontSize: '13px', letterSpacing: '0.04em' }}
             >
               solana auditor
             </span>
@@ -65,7 +65,7 @@ export default function AppFrame({ children, status = 'idle' }) {
                   }`
                 }
                 style={{
-                  fontSize: '11px',
+                  fontSize: '13px',
                   fontWeight: 400,
                   letterSpacing: '0.04em',
                   padding: '6px 10px',
@@ -91,7 +91,7 @@ export default function AppFrame({ children, status = 'idle' }) {
           )}
           <span
             className="font-mono text-text-tertiary"
-            style={{ fontSize: '11px', letterSpacing: '0.04em' }}
+            style={{ fontSize: '13px', letterSpacing: '0.04em' }}
           >
             {st.label}
           </span>

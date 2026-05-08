@@ -20,7 +20,7 @@ export default function Pill({ children, active = false, severity, count, onClic
         }
       `}
       style={{
-        fontSize: '11px',
+        fontSize: '13px',
         fontWeight: 400,
         padding: '5px 11px',
         borderWidth: '0.5px',

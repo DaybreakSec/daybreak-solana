@@ -14,7 +14,7 @@ export default function ActionButton({ children, variant = 'default', onClick, .
         }
       `}
       style={{
-        fontSize: '11px',
+        fontSize: '13px',
         fontWeight: 500,
         letterSpacing: '0.04em',
         padding: '8px 14px',

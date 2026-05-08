@@ -21,7 +21,7 @@ export default function SeverityBadge({ severity }) {
     <span
       className="font-mono inline-block"
       style={{
-        fontSize: '11px',
+        fontSize: '13px',
         fontWeight: 500,
         padding: '2px 8px',
         borderRadius: 'var(--radius-sm)',

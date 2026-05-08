@@ -2,20 +2,26 @@ import SectionLabel from './SectionLabel';
 import { formatTokens, formatCost } from '../utils/format';
 
 const AGENT_ORDER = [
+  'scout',
   'accounts-access',
   'cpi-token',
   'arithmetic-economic',
   'state-lifecycle',
   'invariant-logic',
+  'deepening',
+  'synthesis',
   'validation',
 ];
 
 const AGENT_SHORT = {
+  'scout': 'scout',
   'accounts-access': 'accounts',
   'cpi-token': 'cpi',
   'arithmetic-economic': 'arithmetic',
   'state-lifecycle': 'lifecycle',
   'invariant-logic': 'invariant',
+  'deepening': 'deepen',
+  'synthesis': 'synthesis',
   'validation': 'validation',
 };
 

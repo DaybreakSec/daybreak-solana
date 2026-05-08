@@ -6,8 +6,10 @@ message: >-
 severity: error
 language: rust
 rule:
-  any:
-    - pattern: init_if_needed
+  kind: identifier
+  regex: "^init_if_needed$"
+  inside:
+    kind: token_tree
 note: >-
   init_if_needed allows an account to be initialized on the first call and
   reused on subsequent calls. Ensure you have proper checks to prevent an

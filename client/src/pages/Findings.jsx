@@ -5,8 +5,18 @@ import DetailPanel from '../components/DetailPanel';
 import SectionLabel from '../components/SectionLabel';
 import Pill from '../components/Pill';
 import KbdHint from '../components/KbdHint';
+import ActionButton from '../components/ActionButton';
+import { useToast } from '../components/Toast';
+import { useRequireState } from '../hooks/useRouteGuard';
 
 const SEVERITY_FILTERS = ['all', 'critical', 'high', 'medium', 'low'];
+const SORT_OPTIONS = [
+  { value: '', label: 'default' },
+  { value: 'severity', label: 'severity' },
+  { value: 'confidence', label: 'confidence' },
+  { value: 'file', label: 'file' },
+  { value: 'agent', label: 'agent' },
+];
 
 function bucketFindings(findings) {
   const pending = [];
@@ -21,14 +31,21 @@ function bucketFindings(findings) {
 }
 
 export default function Findings({ onStatusChange }) {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const toast = useToast();
+  const { loading: guardLoading } = useRequireState('progress', '/');
   const [findings, setFindings] = useState([]);
   const [total, setTotal] = useState(0);
-  const [severityFilter, setSeverityFilter] = useState('all');
+  const [severityFilter, setSeverityFilter] = useState(searchParams.get('severity') || 'all');
   const [agentFilter, setAgentFilter] = useState(searchParams.get('agent') || 'all');
+  const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
+  const [sortBy, setSortBy] = useState(searchParams.get('sort') || '');
   const [selectedId, setSelectedId] = useState(null);
   const [dragOverColumn, setDragOverColumn] = useState(null);
+  const [bulkMode, setBulkMode] = useState(false);
+  const [bulkSelected, setBulkSelected] = useState(new Set());
   const containerRef = useRef(null);
+  const searchRef = useRef(null);
   const selectedIdRef = useRef(selectedId);
   selectedIdRef.current = selectedId;
   const [audit, setAudit] = useState(null);
@@ -36,16 +53,31 @@ export default function Findings({ onStatusChange }) {
   useEffect(() => {
     fetch('/api/state/audit').then(r => r.json()).then(data => {
       if (data) setAudit(data);
-    }).catch(() => {});
+    }).catch(err => toast('Failed to load audit state', 'error'));
   }, []);
+
+  // Sync filter state to URL
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (severityFilter !== 'all') params.set('severity', severityFilter);
+    if (agentFilter !== 'all') params.set('agent', agentFilter);
+    if (searchQuery) params.set('search', searchQuery);
+    if (sortBy) params.set('sort', sortBy);
+    setSearchParams(params, { replace: true });
+  }, [severityFilter, agentFilter, searchQuery, sortBy]);
 
   const fetchFindings = useCallback(() => {
     const params = new URLSearchParams();
     if (severityFilter !== 'all') params.set('severity', severityFilter);
     if (agentFilter !== 'all') params.set('agent', agentFilter);
+    if (searchQuery) params.set('search', searchQuery);
+    if (sortBy) params.set('sort', sortBy);
 
     fetch(`/api/findings?${params}`)
-      .then(r => r.json())
+      .then(r => {
+        if (!r.ok) throw new Error(`Server returned ${r.status}`);
+        return r.json();
+      })
       .then(data => {
         const f = data.findings || [];
         setFindings(f);
@@ -57,8 +89,8 @@ export default function Findings({ onStatusChange }) {
           else setSelectedId(f[0].id);
         }
       })
-      .catch(() => {});
-  }, [severityFilter, agentFilter]);
+      .catch(err => toast('Failed to load findings: ' + err.message, 'error'));
+  }, [severityFilter, agentFilter, searchQuery, sortBy]);
 
   useEffect(() => {
     fetchFindings();
@@ -67,12 +99,55 @@ export default function Findings({ onStatusChange }) {
   }, [fetchFindings]);
 
   async function updateFinding(id, update) {
-    await fetch(`/api/findings/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(update),
-    });
+    try {
+      const res = await fetch(`/api/findings/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(update),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toast(err.error || 'Failed to update finding', 'error');
+      }
+    } catch (err) {
+      toast('Failed to update finding: ' + err.message, 'error');
+    }
     fetchFindings();
+  }
+
+  async function handleBulkTriage(status) {
+    if (bulkSelected.size === 0) return;
+    try {
+      const res = await fetch('/api/findings/bulk-triage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ids: Array.from(bulkSelected),
+          status,
+          triageReason: status === 'valid' ? undefined : status.replace('-', ' '),
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toast(err.error || 'Bulk triage failed', 'error');
+      } else {
+        const data = await res.json();
+        toast(`Updated ${data.updated} findings`, 'success');
+        setBulkSelected(new Set());
+      }
+    } catch (err) {
+      toast('Bulk triage failed: ' + err.message, 'error');
+    }
+    fetchFindings();
+  }
+
+  function toggleBulkSelect(id) {
+    setBulkSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   }
 
   // keyboard navigation
@@ -81,6 +156,18 @@ export default function Findings({ onStatusChange }) {
       // Don't intercept keystrokes in form elements
       const tag = e.target.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target.isContentEditable) {
+        return;
+      }
+
+      if (e.key === '/' ) {
+        e.preventDefault();
+        searchRef.current?.focus();
+        return;
+      }
+
+      if (e.key === 'b') {
+        e.preventDefault();
+        setBulkMode(prev => !prev);
         return;
       }
 
@@ -135,7 +222,6 @@ export default function Findings({ onStatusChange }) {
     if (column === 'valid') {
       updateFinding(id, { status: 'valid' });
     } else if (column === 'dismissed') {
-      // Preserve existing dismiss reason if re-dragging, otherwise default to invalid
       const existing = findings.find(f => f.id === id);
       const alreadyDismissed = existing && ['invalid', 'not-important', 'out-of-scope'].includes(existing.status);
       updateFinding(id, {
@@ -163,8 +249,28 @@ export default function Findings({ onStatusChange }) {
         </p>
       </div>
 
-      {/* Filter row */}
-      <div className="flex items-center gap-2 mb-5 flex-wrap">
+      {/* Search + filter row */}
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
+        <input
+          ref={searchRef}
+          type="text"
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+          placeholder="search findings..."
+          className="font-mono text-text-primary placeholder-text-tertiary"
+          style={{
+            fontSize: '13px',
+            padding: '6px 10px',
+            border: '0.5px solid var(--color-border-default)',
+            borderRadius: 'var(--radius-md)',
+            outline: 'none',
+            background: 'transparent',
+            width: '200px',
+          }}
+          onFocus={e => e.target.style.borderColor = 'var(--color-border-strong)'}
+          onBlur={e => e.target.style.borderColor = ''}
+        />
+
         {SEVERITY_FILTERS.map(sev => (
           <Pill
             key={sev}
@@ -176,23 +282,71 @@ export default function Findings({ onStatusChange }) {
             {sev}
           </Pill>
         ))}
-        <div className="ml-auto">
-          <Pill
-            active={agentFilter !== 'all'}
-            onClick={() => {
-              // cycle through agents or reset
-              const currentIdx = agents.indexOf(agentFilter);
-              if (currentIdx < agents.length - 1) setAgentFilter(agents[currentIdx + 1]);
-              else setAgentFilter('all');
+
+        <select
+          value={agentFilter}
+          onChange={e => setAgentFilter(e.target.value)}
+          className="font-mono text-text-secondary cursor-pointer"
+          style={{
+            fontSize: '13px',
+            padding: '5px 8px',
+            border: '0.5px solid var(--color-border-default)',
+            borderRadius: 'var(--radius-md)',
+            background: 'transparent',
+            outline: 'none',
+            marginLeft: 'auto',
+          }}
+        >
+          <option value="all">all agents</option>
+          {agents.map(a => <option key={a} value={a}>{a}</option>)}
+        </select>
+
+        <select
+          value={sortBy}
+          onChange={e => setSortBy(e.target.value)}
+          className="font-mono text-text-secondary cursor-pointer"
+          style={{
+            fontSize: '13px',
+            padding: '5px 8px',
+            border: '0.5px solid var(--color-border-default)',
+            borderRadius: 'var(--radius-md)',
+            background: 'transparent',
+            outline: 'none',
+          }}
+        >
+          {SORT_OPTIONS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+        </select>
+      </div>
+
+      {/* Bulk mode toggle */}
+      <div className="flex items-center gap-3 mb-4">
+        <Pill active={bulkMode} onClick={() => { setBulkMode(!bulkMode); setBulkSelected(new Set()); }}>
+          {bulkMode ? `bulk (${bulkSelected.size})` : 'bulk'}
+        </Pill>
+
+        {bulkMode && bulkSelected.size > 0 && (
+          <div
+            className="flex items-center gap-2"
+            style={{
+              padding: '4px 10px',
+              borderRadius: 'var(--radius-md)',
+              background: 'var(--color-bg-elevated)',
+              border: '0.5px solid var(--color-border-default)',
             }}
           >
-            {agentFilter === 'all' ? 'all agents' : agentFilter}
-          </Pill>
-        </div>
+            <span className="font-mono text-text-tertiary" style={{ fontSize: '13px' }}>
+              {bulkSelected.size} selected:
+            </span>
+            <ActionButton onClick={() => handleBulkTriage('valid')}>valid</ActionButton>
+            <ActionButton onClick={() => handleBulkTriage('invalid')}>invalid</ActionButton>
+            <ActionButton onClick={() => handleBulkTriage('not-important')}>not important</ActionButton>
+            <ActionButton onClick={() => handleBulkTriage('out-of-scope')}>out of scope</ActionButton>
+          </div>
+        )}
       </div>
 
       {/* Main layout: kanban left, detail right */}
-      <div className="flex gap-4" style={{ minHeight: 'calc(100vh - 260px)' }}>
+      <div className="flex gap-4" style={{ minHeight: 'calc(100vh - 320px)' }}>
         {/* Kanban columns */}
         <div className="grid grid-cols-3 gap-2.5" style={{ flex: '0 0 55%', alignContent: 'start' }}>
           {[
@@ -227,7 +381,9 @@ export default function Findings({ onStatusChange }) {
                     finding={f}
                     selected={f.id === selectedId}
                     muted={col.key === 'dismissed'}
-                    onClick={() => setSelectedId(f.id)}
+                    onClick={() => bulkMode ? toggleBulkSelect(f.id) : setSelectedId(f.id)}
+                    checkbox={bulkMode}
+                    checked={bulkSelected.has(f.id)}
                   />
                 ))}
                 {col.items.length === 0 && (
@@ -274,6 +430,8 @@ export default function Findings({ onStatusChange }) {
         <KbdHint shortcut="n" label="not important" />
         <KbdHint shortcut="o" label="out of scope" />
         <KbdHint shortcut="j/k" label="navigate" />
+        <KbdHint shortcut="/" label="search" />
+        <KbdHint shortcut="b" label="bulk mode" />
       </div>
     </div>
   );

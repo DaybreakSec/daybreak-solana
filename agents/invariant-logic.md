@@ -663,11 +663,108 @@ Exploit Template:
 
 ---
 
+## Audit Checklist
+
+For each question below, check whether the code exhibits this pattern. If yes, develop into a full finding. If no, move on.
+
+### 10. Admin / Access Control
+
+**Initialization Security**
+- Can the program's global config/authority be initialized by anyone who calls first (front-run the deployer)?
+- Is the initial authority set to the deployer or a known trusted key, not taken from unchecked instruction data?
+- Can initialization parameters (fees, limits, authorities) be set to malicious values?
+
+**Parameter Updates**
+- Are admin parameter updates validated for bounds (e.g., fee <= MAX_FEE, rate > 0)?
+- Can an admin update parameters to extract user funds (e.g., set fee to 100%)?
+- Is there a timelock or delay on critical parameter changes to give users time to exit?
+- Can parameter updates take effect retroactively on existing positions or only on new ones?
+
+**Key Management**
+- Is the authority transfer a two-step process (propose + accept) to prevent accidental lockout?
+- Can the upgrade authority be set to `None` to make the program immutable?
+- Are multisig or governance mechanisms used for high-privilege operations?
+
+### 12. Anchor-Specific (if applicable)
+
+**Constraint Usage**
+- Are `has_one` constraints used for all cross-account relationship validations?
+- Are `seeds` and `bump` constraints used for PDA validation instead of manual derivation?
+- Are `constraint = ...` attributes used for business logic checks?
+- Is `address = ...` used to validate known program IDs and system accounts?
+- Are `token::mint`, `token::authority`, and `associated_token::*` constraints used for token account validation?
+- Are `#[account(mut)]` annotations applied only to accounts that are actually modified?
+
+**Account Type Selection**
+- Is `Account<'info, T>` used instead of `AccountInfo` or `UncheckedAccount` wherever possible?
+- Are `UncheckedAccount` uses accompanied by explicit `/// CHECK:` documentation and manual validation?
+- Is `Program<'info, T>` used for all program accounts?
+
+### 13. Native Rust-Specific (if applicable)
+
+**Manual Validation Sequence**
+- Are accounts unpacked from the `accounts` iterator in a fixed, documented order?
+- Is every account validated for owner, signer, writable, and type before any business logic executes?
+- Are all expected accounts consumed from the iterator?
+- Are account data lengths validated before deserialization?
+
+**Instruction Parsing**
+- Is instruction data validated for minimum length before parsing?
+- Are instruction discriminators checked before deserializing the rest of the data?
+- Can malformed instruction data cause a panic?
+
+### Cross-Cutting Invariant Questions
+- For each instruction pair (A, B) that modifies shared state: does A→B produce the same final state as B→A? If not, is the ordering dependency documented and safe?
+- For each "total" or "sum" field: is it updated in every code path that modifies its components?
+- For each value flow (tokens in, tokens out): do debits == credits across all instructions?
+- For each round-trip (deposit→withdraw, stake→unstake): does the user get back their original amount minus explicit fees?
+
+---
+
+### Step 11: Guard-Lift Analysis
+For each `require!`, `if ... return Err(...)`, `constraint =`, or guard predicate you encounter:
+1. Ask: "Does this imply a property that must hold across ALL call paths, not just here?"
+2. If yes, search for ALL callers/other functions that modify the same state
+3. If ANY caller lacks an equivalent guard, that gap is both an invariant violation AND a potential finding
+Example: if `withdraw` checks `balance >= amount`, find ALL other functions that modify `balance` and verify they maintain the invariant.
+
+### Step 12: Check Splitting
+Separate identification from assessment:
+- IDENTIFICATION (scanning): "There are N instances of [pattern] in this codebase" — list all with file:line
+- ASSESSMENT (analysis): "Of these N, finding M where [condition] because..."
+This prevents attention dilution. Report both the scan results and the assessment.
+
+### Step 13: Curiosity Principle
+For every externally-reachable instruction, ask:
+- What happens if I pass the same account twice for different parameters?
+- What happens at zero? At max value? At boundary conditions?
+- What if a CPI or oracle returns an unexpected result?
+- What if this instruction is called in the same transaction as another related instruction?
+- What if the account was just created? Just about to be closed?
+
+---
+
+### Output Discipline: Do-Not-Exploit Rule
+Name the asymmetry, the divergence, the missing check, the unusual pattern — then STOP.
+Do NOT fabricate elaborate multi-step exploit chains. Use language like:
+- "Worth checking whether..."
+- "This creates an asymmetry where..."
+- "This diverges from the expected invariant..."
+Let the validation agent and human auditor finish the chain.
+
+### Prescan Lead Disposition
+For each prescan lead relevant to your domain, you MUST either:
+- CONFIRM: develop it into a full FINDING with exploit scenario
+- DISMISS: note why it's a false positive (e.g., "guarded by check on line N")
+Do NOT silently ignore leads. Report your disposition in a summary at the end.
+
+---
+
 ## Dedup Key Format
 
-For each finding, construct a dedup key: `program | instruction | bug_class`
+For each finding, construct a dedup key: `program | instruction | bug_class | instance` where instance disambiguates multiple findings of the same class in the same instruction (e.g. the affected invariant or variable).
 
-Example: `lending_pool | repay | conservation_violation`
+Example: `lending_pool | repay | conservation_violation | total_deposits_tracking`
 
 Before emitting a FINDING, verify that the bug class falls within your scope (listed above). If it belongs to another agent's domain, emit a LEAD instead.
 
@@ -681,12 +778,14 @@ For confirmed vulnerabilities with concrete proof:
 FINDING:
   title: <concise title>
   severity: critical|high|medium|low|informational
+  confidence: high|medium|low
   file: <file path>
   line: <line number>
   bugClass: <bug class identifier>
   description: <what the vulnerability is>
   proof: <specific code references showing the vulnerability>
   recommendation: <how to fix it>
+  detection: <how it was found: "checklist", "guard-lift", "lead-N", "manual">
 ```
 
 For suspicious patterns that need further investigation or belong to another agent's domain:
@@ -695,6 +794,7 @@ For suspicious patterns that need further investigation or belong to another age
 LEAD:
   title: <concise title>
   severity: <estimated severity>
+  confidence: high|medium|low
   file: <file path>
   line: <line number>
   bugClass: <bug class identifier>

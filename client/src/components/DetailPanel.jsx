@@ -1,16 +1,20 @@
+import { useState } from 'react';
 import SeverityBadge from './SeverityBadge';
 import SectionLabel from './SectionLabel';
-import CodeBlock from './CodeBlock';
+import MarkdownProse from './MarkdownProse';
 import ActionButton from './ActionButton';
 
 export default function DetailPanel({ finding, onVerdict }) {
+  const [pocOpen, setPocOpen] = useState(false);
   if (!finding) return null;
 
   const idLabel = finding.id || 'f-000';
   const agentLabel = finding.agent || '';
   const bugClass = finding.bugClass || '';
 
-  const metaParts = [idLabel, agentLabel, bugClass].filter(Boolean).join(' · ');
+  const confidenceLabel = finding.confidence ? `${finding.confidence} conf.` : '';
+  const detectionLabel = finding.detection || '';
+  const metaParts = [idLabel, agentLabel, bugClass, confidenceLabel, detectionLabel].filter(Boolean).join(' · ');
 
   return (
     <div
@@ -19,7 +23,6 @@ export default function DetailPanel({ finding, onVerdict }) {
         border: '0.5px solid var(--color-border-default)',
         borderRadius: 'var(--radius-xl)',
         padding: '18px 20px',
-        marginTop: '16px',
       }}
     >
       {/* Top row: severity + meta label */}
@@ -43,32 +46,32 @@ export default function DetailPanel({ finding, onVerdict }) {
       {/* File reference */}
       <div
         className="font-mono text-text-secondary mb-4"
-        style={{ fontSize: '12px' }}
+        style={{
+          fontSize: '13px',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}
+        title={`${finding.file}${finding.line != null ? `:${finding.line}` : ''}`}
       >
         {finding.file}{finding.line != null ? `:${finding.line}` : ''}
       </div>
 
       {/* Description */}
-      <p
-        className="font-sans text-text-primary mb-4"
-        style={{
-          fontSize: '13.5px',
-          lineHeight: '1.65',
-          fontWeight: 400,
-        }}
-        dangerouslySetInnerHTML={{
-          __html: highlightTechnicalTerms(finding.description || ''),
-        }}
+      <MarkdownProse
+        text={finding.description}
+        className="text-text-primary mb-4"
       />
 
-      {/* Code block */}
+      {/* Proof */}
       {finding.proof && (
         <div className="mb-4">
-          <CodeBlock
-            code={finding.proof}
-            file={finding.file}
-            line={finding.line}
-            highlightLines={finding.highlightLines || []}
+          <div className="mb-2">
+            <SectionLabel>proof</SectionLabel>
+          </div>
+          <MarkdownProse
+            text={finding.proof}
+            className="text-text-primary"
           />
         </div>
       )}
@@ -79,16 +82,139 @@ export default function DetailPanel({ finding, onVerdict }) {
           <div className="mb-2">
             <SectionLabel>recommendation</SectionLabel>
           </div>
+          <MarkdownProse
+            text={finding.recommendation}
+            className="text-text-primary"
+          />
+        </div>
+      )}
+
+      {/* Validation verdict */}
+      {finding.validation && (
+        <div
+          className="mb-4"
+          style={{
+            padding: '10px 12px',
+            borderRadius: 'var(--radius-md)',
+            background: finding.validation.verdict === 'confirmed'
+              ? 'rgba(232, 178, 56, 0.06)'
+              : finding.validation.verdict === 'refuted'
+                ? 'rgba(232, 90, 90, 0.06)'
+                : 'rgba(154, 163, 184, 0.06)',
+            border: `0.5px solid ${
+              finding.validation.verdict === 'confirmed'
+                ? 'rgba(232, 178, 56, 0.2)'
+                : finding.validation.verdict === 'refuted'
+                  ? 'rgba(232, 90, 90, 0.2)'
+                  : 'rgba(154, 163, 184, 0.15)'
+            }`,
+          }}
+        >
+          <div className="flex items-center gap-2 mb-1.5">
+            <SectionLabel>
+              validation · {finding.validation.verdict}
+              {finding.validation.confidence ? ` · ${finding.validation.confidence} confidence` : ''}
+            </SectionLabel>
+          </div>
           <p
-            className="font-sans text-text-primary"
-            style={{
-              fontSize: '13.5px',
-              lineHeight: '1.65',
-              fontWeight: 400,
-            }}
+            className="font-mono text-text-secondary"
+            style={{ fontSize: '13px', lineHeight: '1.55' }}
           >
-            {finding.recommendation}
+            {finding.validation.reasoning}
           </p>
+          {finding.validation.codeEvidence && (
+            <pre
+              className="font-mono text-text-tertiary mt-2"
+              style={{
+                fontSize: '13px',
+                lineHeight: '1.5',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+              }}
+            >
+              {finding.validation.codeEvidence}
+            </pre>
+          )}
+
+          {/* Attacker model */}
+          {finding.validation.attackerModel && (
+            <div className="mt-3" style={{ borderTop: '0.5px solid var(--color-border-subtle)', paddingTop: '8px' }}>
+              <SectionLabel>attacker model</SectionLabel>
+              <div className="font-mono text-text-secondary mt-1" style={{ fontSize: '13px', lineHeight: '1.55' }}>
+                <div><span className="text-text-tertiary">who:</span> {finding.validation.attackerModel.who}</div>
+                <div><span className="text-text-tertiary">gains:</span> {finding.validation.attackerModel.gains}</div>
+                <div><span className="text-text-tertiary">risks:</span> {finding.validation.attackerModel.risks}</div>
+              </div>
+            </div>
+          )}
+
+          {/* Feasibility predicate */}
+          {finding.validation.feasibilityPredicate && (
+            <div className="mt-3" style={{ borderTop: '0.5px solid var(--color-border-subtle)', paddingTop: '8px' }}>
+              <SectionLabel>feasibility</SectionLabel>
+              <p className="font-mono text-text-secondary mt-1" style={{ fontSize: '13px', lineHeight: '1.55' }}>
+                {finding.validation.feasibilityPredicate}
+              </p>
+            </div>
+          )}
+
+          {/* Conceptual PoC (collapsible) */}
+          {finding.validation.conceptualPoc && (
+            <div className="mt-3" style={{ borderTop: '0.5px solid var(--color-border-subtle)', paddingTop: '8px' }}>
+              <button
+                type="button"
+                className="flex items-center gap-1.5 font-mono text-text-tertiary cursor-pointer"
+                style={{ fontSize: '13px', background: 'none', border: 'none', padding: 0 }}
+                onClick={() => setPocOpen(!pocOpen)}
+              >
+                <span style={{
+                  display: 'inline-block',
+                  transform: pocOpen ? 'rotate(90deg)' : 'rotate(0deg)',
+                  transition: 'transform 150ms',
+                }}>›</span>
+                conceptual poc
+              </button>
+              {pocOpen && (
+                <pre
+                  className="font-mono text-text-secondary mt-2"
+                  style={{
+                    fontSize: '13px',
+                    lineHeight: '1.5',
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                    padding: '8px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'var(--color-bg-recessed)',
+                  }}
+                >
+                  {finding.validation.conceptualPoc}
+                </pre>
+              )}
+            </div>
+          )}
+
+          {/* Backpressure pattern */}
+          {finding.validation.backpressurePattern && (
+            <div className="mt-3" style={{ borderTop: '0.5px solid var(--color-border-subtle)', paddingTop: '8px' }}>
+              <SectionLabel>backpressure pattern</SectionLabel>
+              <pre
+                className="font-mono text-text-tertiary mt-1"
+                style={{ fontSize: '13px', lineHeight: '1.5', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+              >
+                {finding.validation.backpressurePattern}
+              </pre>
+            </div>
+          )}
+
+          {/* Calibration */}
+          {finding.validation.calibration && (
+            <div className="mt-3" style={{ borderTop: '0.5px solid var(--color-border-subtle)', paddingTop: '8px' }}>
+              <SectionLabel>calibration</SectionLabel>
+              <p className="font-mono text-text-secondary mt-1" style={{ fontSize: '13px', lineHeight: '1.55', fontStyle: 'italic' }}>
+                {finding.validation.calibration}
+              </p>
+            </div>
+          )}
         </div>
       )}
 
@@ -115,13 +241,5 @@ export default function DetailPanel({ finding, onVerdict }) {
         </ActionButton>
       </div>
     </div>
-  );
-}
-
-// Wrap backtick-delimited terms in mono dawn-gold spans
-function highlightTechnicalTerms(text) {
-  return text.replace(
-    /`([^`]+)`/g,
-    '<span style="font-family: var(--font-mono); color: var(--color-dawn-gold); font-size: 12px;">$1</span>'
   );
 }

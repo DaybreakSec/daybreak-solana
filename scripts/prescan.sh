@@ -26,10 +26,28 @@ fi
 mkdir -p "$OUTPUT_DIR"
 
 # ---------------------------------------------------------------------------
-# Logging
+# Logging & tool status tracking
 # ---------------------------------------------------------------------------
 log() {
     echo "[prescan] $(date '+%H:%M:%S') $*" >&2
+}
+
+# Track which tools ran, skipped, or failed
+declare -A TOOL_STATUS
+
+tool_ok() {
+    TOOL_STATUS["$1"]="ok"
+    log "$1: completed"
+}
+
+tool_skip() {
+    TOOL_STATUS["$1"]="skipped: $2"
+    log "$1: skipped ($2)"
+}
+
+tool_fail() {
+    TOOL_STATUS["$1"]="failed: $2"
+    log "WARNING: $1 failed ($2)"
 }
 
 # ---------------------------------------------------------------------------
@@ -44,6 +62,10 @@ CPIS_FILE="$OUTPUT_DIR/cpis.json"
 PDAS_FILE="$OUTPUT_DIR/pdas.json"
 INSTRUCTIONS_FILE="$OUTPUT_DIR/instructions.json"
 MIR_FILE="$OUTPUT_DIR/mir-results.json"
+ORACLES_FILE="$OUTPUT_DIR/oracles.json"
+STATE_MACHINES_FILE="$OUTPUT_DIR/state-machines.json"
+CLOSE_PATTERNS_FILE="$OUTPUT_DIR/close-patterns.json"
+VALUE_FLOWS_FILE="$OUTPUT_DIR/value-flows.json"
 
 # Initialize with empty arrays
 echo '[]' > "$AST_GREP_FILE"
@@ -54,13 +76,17 @@ echo '[]' > "$CPIS_FILE"
 echo '[]' > "$PDAS_FILE"
 echo '[]' > "$INSTRUCTIONS_FILE"
 echo '[]' > "$MIR_FILE"
+echo '[]' > "$ORACLES_FILE"
+echo '[]' > "$STATE_MACHINES_FILE"
+echo '[]' > "$CLOSE_PATTERNS_FILE"
+echo '[]' > "$VALUE_FLOWS_FILE"
 
 # ---------------------------------------------------------------------------
 # 1. ast-grep analysis
 # ---------------------------------------------------------------------------
 run_ast_grep() {
     if ! command -v ast-grep &>/dev/null && ! command -v sg &>/dev/null; then
-        log "ast-grep not found, skipping"
+        tool_skip "ast-grep" "binary not found"
         return 0
     fi
 
@@ -68,12 +94,16 @@ run_ast_grep() {
     if [[ -x "$ast_grep_script" ]]; then
         log "Running ast-grep rules..."
         local result
-        result=$("$ast_grep_script" "$TARGET_DIR" 2>/dev/null) || true
-        if [[ -n "$result" ]]; then
-            echo "$result" > "$AST_GREP_FILE"
+        if result=$("$ast_grep_script" "$TARGET_DIR" 2>&1); then
+            if [[ -n "$result" && "$result" != "[]" ]]; then
+                echo "$result" > "$AST_GREP_FILE"
+            fi
+            tool_ok "ast-grep"
+        else
+            tool_fail "ast-grep" "run.sh exited with non-zero"
         fi
     else
-        log "ast-grep/run.sh not found or not executable, skipping"
+        tool_skip "ast-grep" "run.sh not found or not executable"
     fi
 }
 
@@ -82,22 +112,27 @@ run_ast_grep() {
 # ---------------------------------------------------------------------------
 run_clippy() {
     if ! command -v cargo &>/dev/null; then
-        log "cargo not found, skipping clippy"
+        tool_skip "clippy" "cargo not found"
         return 0
     fi
 
     if [[ ! -f "$TARGET_DIR/Cargo.toml" ]]; then
-        log "No Cargo.toml in target, skipping clippy"
+        tool_skip "clippy" "no Cargo.toml"
         return 0
     fi
 
     log "Running cargo clippy..."
-    local clippy_output
-    clippy_output=$(cd "$TARGET_DIR" && cargo clippy --message-format=json 2>/dev/null) || true
+    local clippy_output clippy_exit=0
+    clippy_output=$(cd "$TARGET_DIR" && cargo clippy --message-format=json 2>&1) || clippy_exit=$?
+
+    if [[ $clippy_exit -ne 0 && -z "$clippy_output" ]]; then
+        tool_fail "clippy" "exit code $clippy_exit"
+        return 0
+    fi
 
     if [[ -n "$clippy_output" ]]; then
         # Extract warning/error messages into JSON array
-        echo "$clippy_output" | python3 -c "
+        if echo "$clippy_output" | python3 -c "
 import sys, json
 results = []
 for line in sys.stdin:
@@ -125,7 +160,14 @@ for line in sys.stdin:
     except json.JSONDecodeError:
         continue
 json.dump(results, sys.stdout, indent=2)
-" > "$CLIPPY_FILE" 2>/dev/null || echo '[]' > "$CLIPPY_FILE"
+" > "$CLIPPY_FILE" 2>/dev/null; then
+            tool_ok "clippy"
+        else
+            echo '[]' > "$CLIPPY_FILE"
+            tool_fail "clippy" "JSON parsing failed"
+        fi
+    else
+        tool_ok "clippy"
     fi
 }
 
@@ -134,21 +176,21 @@ json.dump(results, sys.stdout, indent=2)
 # ---------------------------------------------------------------------------
 run_cargo_audit() {
     if ! command -v cargo-audit &>/dev/null && ! command -v cargo &>/dev/null; then
-        log "cargo-audit not found, skipping"
+        tool_skip "cargo-audit" "binary not found"
         return 0
     fi
 
     if [[ ! -f "$TARGET_DIR/Cargo.lock" ]]; then
-        log "No Cargo.lock in target, skipping audit"
+        tool_skip "cargo-audit" "no Cargo.lock"
         return 0
     fi
 
     log "Running cargo audit..."
-    local audit_output
-    audit_output=$(cd "$TARGET_DIR" && cargo audit --json 2>/dev/null) || true
+    local audit_output audit_exit=0
+    audit_output=$(cd "$TARGET_DIR" && cargo audit --json 2>&1) || audit_exit=$?
 
     if [[ -n "$audit_output" ]]; then
-        echo "$audit_output" | python3 -c "
+        if echo "$audit_output" | python3 -c "
 import sys, json
 try:
     data = json.load(sys.stdin)
@@ -165,9 +207,17 @@ try:
             'url': adv.get('url', ''),
         })
     json.dump(results, sys.stdout, indent=2)
-except Exception:
+except Exception as e:
+    print(f'Parse error: {e}', file=sys.stderr)
     json.dump([], sys.stdout)
-" > "$AUDIT_FILE" 2>/dev/null || echo '[]' > "$AUDIT_FILE"
+" > "$AUDIT_FILE" 2>/dev/null; then
+            tool_ok "cargo-audit"
+        else
+            echo '[]' > "$AUDIT_FILE"
+            tool_fail "cargo-audit" "JSON parsing failed"
+        fi
+    else
+        tool_skip "cargo-audit" "no output"
     fi
 }
 
@@ -176,36 +226,51 @@ except Exception:
 # ---------------------------------------------------------------------------
 run_tree_sitter() {
     if ! command -v python3 &>/dev/null; then
-        log "python3 not found, skipping tree-sitter extractors"
+        tool_skip "tree-sitter" "python3 not found"
         return 0
     fi
 
     # Check if tree-sitter is available
     if ! python3 -c "import tree_sitter" 2>/dev/null; then
-        log "tree-sitter Python module not available, skipping"
+        tool_skip "tree-sitter" "tree-sitter Python module not available"
         return 0
     fi
 
     local ts_dir="$SCRIPT_DIR/tree-sitter"
+    local ts_failed=0
 
-    if [[ -f "$ts_dir/extract-accounts.py" ]]; then
-        log "Extracting accounts..."
-        python3 "$ts_dir/extract-accounts.py" "$TARGET_DIR" > "$ACCOUNTS_FILE" 2>/dev/null || echo '[]' > "$ACCOUNTS_FILE"
-    fi
+    local extractors=(
+        "extract-accounts.py:$ACCOUNTS_FILE:accounts"
+        "extract-cpis.py:$CPIS_FILE:cpis"
+        "extract-pdas.py:$PDAS_FILE:pdas"
+        "extract-instructions.py:$INSTRUCTIONS_FILE:instructions"
+        "extract-oracles.py:$ORACLES_FILE:oracles"
+        "extract-state-machines.py:$STATE_MACHINES_FILE:state-machines"
+        "extract-close-patterns.py:$CLOSE_PATTERNS_FILE:close-patterns"
+        "extract-value-flows.py:$VALUE_FLOWS_FILE:value-flows"
+    )
 
-    if [[ -f "$ts_dir/extract-cpis.py" ]]; then
-        log "Extracting CPIs..."
-        python3 "$ts_dir/extract-cpis.py" "$TARGET_DIR" > "$CPIS_FILE" 2>/dev/null || echo '[]' > "$CPIS_FILE"
-    fi
+    for entry in "${extractors[@]}"; do
+        IFS=':' read -r script outfile label <<< "$entry"
+        if [[ -f "$ts_dir/$script" ]]; then
+            log "Extracting $label..."
+            if python3 "$ts_dir/$script" "$TARGET_DIR" > "$outfile" 2>/dev/null; then
+                # Validate output is valid JSON
+                if ! python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$outfile" 2>/dev/null; then
+                    echo '[]' > "$outfile"
+                    tool_fail "tree-sitter:$label" "invalid JSON output"
+                    ts_failed=1
+                fi
+            else
+                echo '[]' > "$outfile"
+                tool_fail "tree-sitter:$label" "script exited with non-zero"
+                ts_failed=1
+            fi
+        fi
+    done
 
-    if [[ -f "$ts_dir/extract-pdas.py" ]]; then
-        log "Extracting PDAs..."
-        python3 "$ts_dir/extract-pdas.py" "$TARGET_DIR" > "$PDAS_FILE" 2>/dev/null || echo '[]' > "$PDAS_FILE"
-    fi
-
-    if [[ -f "$ts_dir/extract-instructions.py" ]]; then
-        log "Extracting instructions..."
-        python3 "$ts_dir/extract-instructions.py" "$TARGET_DIR" > "$INSTRUCTIONS_FILE" 2>/dev/null || echo '[]' > "$INSTRUCTIONS_FILE"
+    if [[ $ts_failed -eq 0 ]]; then
+        tool_ok "tree-sitter"
     fi
 }
 
@@ -216,23 +281,33 @@ run_mir() {
     local mir_dir="$SCRIPT_DIR/mir"
 
     if [[ ! -x "$mir_dir/emit-mir.sh" ]]; then
-        log "emit-mir.sh not found or not executable, skipping MIR"
+        tool_skip "mir" "emit-mir.sh not found or not executable"
         return 0
     fi
 
     if ! command -v cargo &>/dev/null; then
-        log "cargo not found, skipping MIR"
+        tool_skip "mir" "cargo not found"
         return 0
     fi
 
     log "Emitting MIR..."
     local mir_output_dir="$OUTPUT_DIR/mir-output"
     mkdir -p "$mir_output_dir"
-    "$mir_dir/emit-mir.sh" "$TARGET_DIR" "$mir_output_dir" 2>/dev/null || true
+    if ! "$mir_dir/emit-mir.sh" "$TARGET_DIR" "$mir_output_dir" 2>/dev/null; then
+        tool_fail "mir" "emit-mir.sh failed"
+        # Continue to parse whatever was produced
+    fi
 
     if [[ -f "$mir_dir/parse-mir.py" ]] && command -v python3 &>/dev/null; then
         log "Parsing MIR..."
-        python3 "$mir_dir/parse-mir.py" "$mir_output_dir" > "$MIR_FILE" 2>/dev/null || echo '[]' > "$MIR_FILE"
+        if python3 "$mir_dir/parse-mir.py" "$mir_output_dir" > "$MIR_FILE" 2>/dev/null; then
+            tool_ok "mir"
+        else
+            echo '[]' > "$MIR_FILE"
+            tool_fail "mir" "parse-mir.py failed"
+        fi
+    else
+        tool_skip "mir" "parse-mir.py or python3 not available"
     fi
 }
 
@@ -241,6 +316,23 @@ run_mir() {
 # ---------------------------------------------------------------------------
 merge_results() {
     log "Merging results into leads.json..."
+
+    # Build tool status JSON from bash associative array
+    local status_json="{"
+    local status_first=true
+    for tool in "${!TOOL_STATUS[@]}"; do
+        if [[ "$status_first" == "true" ]]; then
+            status_first=false
+        else
+            status_json+=","
+        fi
+        # Escape the value for JSON
+        local val="${TOOL_STATUS[$tool]}"
+        val="${val//\\/\\\\}"
+        val="${val//\"/\\\"}"
+        status_json+="\"$tool\":\"$val\""
+    done
+    status_json+="}"
 
     python3 -c "
 import json, sys
@@ -252,14 +344,15 @@ def load_json(path, default):
     except Exception:
         return default
 
-ast_grep = load_json('$AST_GREP_FILE', [])
-clippy = load_json('$CLIPPY_FILE', [])
-audit = load_json('$AUDIT_FILE', [])
-mir = load_json('$MIR_FILE', [])
-accounts = load_json('$ACCOUNTS_FILE', [])
-cpis = load_json('$CPIS_FILE', [])
-pdas = load_json('$PDAS_FILE', [])
-instructions = load_json('$INSTRUCTIONS_FILE', [])
+ast_grep = load_json(sys.argv[1], [])
+clippy = load_json(sys.argv[2], [])
+audit = load_json(sys.argv[3], [])
+mir = load_json(sys.argv[4], [])
+accounts = load_json(sys.argv[5], [])
+cpis = load_json(sys.argv[6], [])
+pdas = load_json(sys.argv[7], [])
+instructions = load_json(sys.argv[8], [])
+tool_status = json.loads(sys.argv[9])
 
 # Combine all tool findings into leads
 leads = []
@@ -314,6 +407,7 @@ for item in mir:
 
 output = {
     'leads': leads,
+    'toolStatus': tool_status,
     'accounts': accounts,
     'cpis': cpis,
     'pdas': pdas,
@@ -321,7 +415,9 @@ output = {
 }
 
 json.dump(output, sys.stdout, indent=2)
-" > "$LEADS_FILE"
+" "$AST_GREP_FILE" "$CLIPPY_FILE" "$AUDIT_FILE" "$MIR_FILE" \
+  "$ACCOUNTS_FILE" "$CPIS_FILE" "$PDAS_FILE" "$INSTRUCTIONS_FILE" \
+  "$status_json" > "$LEADS_FILE"
 
     log "Results written to $LEADS_FILE"
 }
@@ -339,6 +435,25 @@ main() {
     run_tree_sitter
     run_mir
     merge_results
+
+    # Print tool status summary
+    log "--- Prescan Summary ---"
+    local has_failures=false
+    for tool in "${!TOOL_STATUS[@]}"; do
+        local status="${TOOL_STATUS[$tool]}"
+        if [[ "$status" == failed* ]]; then
+            log "  FAIL  $tool: $status"
+            has_failures=true
+        elif [[ "$status" == skipped* ]]; then
+            log "  SKIP  $tool: $status"
+        else
+            log "  OK    $tool"
+        fi
+    done
+
+    if [[ "$has_failures" == "true" ]]; then
+        log "WARNING: Some tools failed. Results may be incomplete."
+    fi
 
     log "Prescan complete"
     echo "$LEADS_FILE"

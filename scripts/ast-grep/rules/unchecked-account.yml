@@ -6,11 +6,10 @@ message: >-
 severity: warning
 language: rust
 rule:
-  any:
-    - pattern: "UncheckedAccount<'$LIFETIME>"
-    - pattern: "AccountInfo<'$LIFETIME>"
+  pattern: "UncheckedAccount<'$LIFETIME>"
 note: >-
-  When using UncheckedAccount (or raw AccountInfo in Anchor), you must add a
-  /// CHECK: doc comment on the preceding line explaining the safety rationale.
-  Without this, Anchor will refuse to compile, but if bypassed, it leaves
-  accounts unvalidated.
+  When using UncheckedAccount in Anchor, you must add a /// CHECK: doc comment
+  on the preceding line explaining the safety rationale. Without this, Anchor
+  will refuse to compile. If the comment is present but the rationale is weak,
+  flag for manual review. Raw AccountInfo usage in native programs is expected
+  and handled by the missing-signer rule instead.

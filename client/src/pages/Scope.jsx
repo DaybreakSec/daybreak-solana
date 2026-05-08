@@ -1,37 +1,54 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import SectionLabel from '../components/SectionLabel';
 import ActionButton from '../components/ActionButton';
+import { useToast } from '../components/Toast';
+import { useRequireState } from '../hooks/useRouteGuard';
 
 export default function Scope() {
   const navigate = useNavigate();
+  const toast = useToast();
+  const { loading: guardLoading } = useRequireState('audit', '/');
   const [scope, setScope] = useState(null);
   const [loading, setLoading] = useState(true);
   const [excluded, setExcluded] = useState(new Set());
-  const [hoveredFile, setHoveredFile] = useState(null);
+  const [audit, setAudit] = useState(null);
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    const poll = setInterval(() => {
+    fetch('/api/state/audit').then(r => r.json()).then(data => {
+      if (data) setAudit(data);
+    }).catch(err => {
+      setError('Failed to load audit config: ' + err.message);
+      toast('Failed to load audit config', 'error');
+    });
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    function fetchScope() {
       fetch('/api/state/scope')
-        .then(r => r.json())
-        .then(data => {
-          if (data) { setScope(data); setLoading(false); }
+        .then(r => {
+          if (!r.ok) throw new Error(`Server returned ${r.status}`);
+          return r.json();
         })
-        .catch(() => {});
-    }, 2000);
+        .then(data => {
+          if (!active) return;
+          if (data) {
+            setScope(data);
+            setLoading(false);
+            if (data.excludedFiles) setExcluded(new Set(data.excludedFiles));
+          }
+        })
+        .catch(err => {
+          if (active) setError('Failed to load scope: ' + err.message);
+        });
+    }
 
-    fetch('/api/state/scope')
-      .then(r => r.json())
-      .then(data => {
-        if (data) {
-          setScope(data);
-          setLoading(false);
-          if (data.excludedFiles) setExcluded(new Set(data.excludedFiles));
-        }
-      })
-      .catch(() => {});
-
-    return () => clearInterval(poll);
+    fetchScope();
+    const poll = setInterval(fetchScope, 2000);
+    return () => { active = false; clearInterval(poll); };
   }, []);
 
   function toggleFile(path) {
@@ -50,24 +67,73 @@ export default function Scope() {
       excludedFiles: Array.from(excluded),
       acceptedAt: new Date().toISOString(),
     };
-    await fetch('/api/state/scope', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updated),
-    });
+
+    try {
+      const putRes = await fetch('/api/state/scope', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated),
+      });
+      if (!putRes.ok) {
+        toast('Failed to save scope', 'error');
+        return;
+      }
+    } catch (err) {
+      toast('Failed to save scope: ' + err.message, 'error');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/scan/start', { method: 'POST' });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toast(err.error || 'Failed to start scan', 'error');
+        return;
+      }
+    } catch (e) {
+      toast('Failed to start scan: ' + e.message, 'error');
+      return;
+    }
+
     navigate('/audit');
   }
 
   if (loading) {
     return (
       <div className="text-center py-20">
-        <div
-          className="inline-block w-2 h-2 rounded-full bg-dawn-magenta"
-          style={{ animation: 'scanning-pulse 1600ms ease-in-out infinite' }}
-        />
-        <p className="font-mono text-text-tertiary mt-4" style={{ fontSize: '11px' }}>
-          waiting for scope analysis...
-        </p>
+        {error ? (
+          <>
+            <p className="font-mono text-dawn-coral" style={{ fontSize: '13px' }}>
+              {error}
+            </p>
+            <button
+              type="button"
+              onClick={() => navigate('/')}
+              className="font-mono text-dawn-amber mt-4 cursor-pointer"
+              style={{ fontSize: '13px' }}
+            >
+              ← back to setup
+            </button>
+          </>
+        ) : (
+          <>
+            <div
+              className="inline-block w-2 h-2 rounded-full bg-dawn-magenta"
+              style={{ animation: 'scanning-pulse 1600ms ease-in-out infinite' }}
+            />
+            <p className="font-mono text-text-tertiary mt-4" style={{ fontSize: '13px' }}>
+              waiting for scope analysis...
+            </p>
+            <button
+              type="button"
+              onClick={() => navigate('/')}
+              className="font-mono text-text-tertiary mt-2 cursor-pointer hover:text-text-secondary"
+              style={{ fontSize: '13px' }}
+            >
+              ← back to setup
+            </button>
+          </>
+        )}
         <style>{`
           @keyframes scanning-pulse {
             0%, 100% { opacity: 1; }
@@ -80,7 +146,7 @@ export default function Scope() {
 
   if (!scope) {
     return (
-      <p className="font-mono text-text-tertiary" style={{ fontSize: '11px' }}>
+      <p className="font-mono text-text-tertiary" style={{ fontSize: '13px' }}>
         no scope data available. start an audit first.
       </p>
     );
@@ -95,34 +161,51 @@ export default function Scope() {
     <div>
       {/* Header */}
       <div className="mb-4">
-        <SectionLabel>audit 003 · scope</SectionLabel>
+        <SectionLabel>audit · {audit?.repoUrl?.split('/').pop()?.replace('.git', '') || audit?.localPath?.split('/').pop() || 'scope'}</SectionLabel>
         <h1
           className="font-display text-text-primary mt-1"
           style={{ fontSize: '28px', lineHeight: '1.15', fontWeight: 500 }}
         >
           review scope
         </h1>
-        <p className="font-mono text-text-tertiary mt-1" style={{ fontSize: '11px' }}>
+        <p className="font-mono text-text-tertiary mt-1" style={{ fontSize: '13px' }}>
           {scope.framework || 'anchor'} · {inScopeLoc.toLocaleString()} loc in scope
         </p>
       </div>
 
-      {/* Treemap */}
+      {/* File list */}
       <div
         className="mb-6 bg-bg-elevated overflow-hidden"
         style={{
           borderRadius: 'var(--radius-xl)',
           border: '0.5px solid var(--color-border-default)',
-          padding: '2px',
         }}
       >
-        <TreeMap
-          files={files}
-          excluded={excluded}
-          hoveredFile={hoveredFile}
-          onHover={setHoveredFile}
-          onToggle={toggleFile}
-        />
+        {files.map((f, i) => {
+          const isExcluded = excluded.has(f.path);
+          return (
+            <div
+              key={f.path}
+              role="button"
+              tabIndex={0}
+              className="flex items-center justify-between cursor-pointer transition-colors duration-150 hover:bg-bg-elevated-2/40"
+              style={{
+                padding: '10px 16px',
+                borderBottom: i < files.length - 1 ? '0.5px solid var(--color-border-subtle)' : 'none',
+                opacity: isExcluded ? 0.4 : 1,
+              }}
+              onClick={() => toggleFile(f.path)}
+              onKeyDown={e => { if (e.key === 'Enter') toggleFile(f.path); }}
+            >
+              <span className="font-mono text-text-primary" style={{ fontSize: '13px' }}>
+                {f.path}
+              </span>
+              <span className="font-mono text-text-tertiary" style={{ fontSize: '13px' }}>
+                {f.loc.toLocaleString()} loc
+              </span>
+            </div>
+          );
+        })}
       </div>
 
       {/* Excluded files list */}
@@ -132,14 +215,14 @@ export default function Scope() {
           <div className="mt-2 space-y-1">
             {Array.from(excluded).map(path => (
               <div key={path} className="flex items-center gap-2">
-                <span className="font-mono text-text-tertiary" style={{ fontSize: '11px' }}>
+                <span className="font-mono text-text-tertiary" style={{ fontSize: '13px' }}>
                   {path}
                 </span>
                 <button
                   type="button"
                   onClick={() => toggleFile(path)}
                   className="font-mono text-dawn-amber cursor-pointer"
-                  style={{ fontSize: '10px' }}
+                  style={{ fontSize: '12px' }}
                 >
                   re-include
                 </button>
@@ -156,73 +239,6 @@ export default function Scope() {
           accept scope →
         </ActionButton>
       </div>
-    </div>
-  );
-}
-
-// Simple treemap: rectangles proportional to LOC in a flex-wrap layout
-function TreeMap({ files, excluded, hoveredFile, onHover, onToggle }) {
-  const maxLoc = Math.max(...files.map(f => f.loc), 1);
-
-  return (
-    <div className="flex flex-wrap" style={{ minHeight: '180px' }}>
-      {files.map(f => {
-        const isExcluded = excluded.has(f.path);
-        const isHovered = hoveredFile === f.path;
-        // size proportional to LOC, min 40px
-        const size = Math.max(40, Math.sqrt(f.loc / maxLoc) * 120);
-
-        return (
-          <div
-            key={f.path}
-            role="button"
-            tabIndex={0}
-            className="relative cursor-pointer transition-colors duration-150"
-            style={{
-              width: `${size}px`,
-              height: `${size}px`,
-              flexGrow: f.loc,
-              background: isExcluded
-                ? 'var(--color-bg-elevated)'
-                : isHovered
-                  ? 'var(--color-bg-elevated-2)'
-                  : 'var(--color-bg-elevated)',
-              border: '0.5px solid var(--color-border-subtle)',
-              borderRadius: '2px',
-              opacity: isExcluded ? 0.4 : 1,
-            }}
-            onMouseEnter={() => onHover(f.path)}
-            onMouseLeave={() => onHover(null)}
-            onClick={() => onToggle(f.path)}
-            onKeyDown={e => { if (e.key === 'Enter') onToggle(f.path); }}
-          >
-            {/* Diagonal hatch for excluded */}
-            {isExcluded && (
-              <svg className="absolute inset-0 w-full h-full pointer-events-none" aria-hidden="true">
-                <pattern id={`hatch-${f.path}`} width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-                  <line x1="0" y1="0" x2="0" y2="6" stroke="var(--color-text-tertiary)" strokeWidth="0.5" strokeOpacity="0.3" />
-                </pattern>
-                <rect width="100%" height="100%" fill={`url(#hatch-${f.path})`} />
-              </svg>
-            )}
-
-            {/* Tooltip on hover */}
-            {isHovered && (
-              <div
-                className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 bg-bg-recessed font-mono text-text-primary whitespace-nowrap z-10"
-                style={{
-                  fontSize: '10px',
-                  padding: '3px 8px',
-                  borderRadius: 'var(--radius-sm)',
-                  border: '0.5px solid var(--color-border-default)',
-                }}
-              >
-                {f.path} · {f.loc} loc
-              </div>
-            )}
-          </div>
-        );
-      })}
     </div>
   );
 }

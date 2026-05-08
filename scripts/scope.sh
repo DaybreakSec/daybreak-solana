@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+_TMPFILES=()
+cleanup_tmp() { for f in "${_TMPFILES[@]}"; do rm -f "$f" 2>/dev/null || true; done; }
+trap cleanup_tmp EXIT
+
 # scope.sh - Analyze Solana project scope: LOC counting, framework detection, file manifest
 # Usage: ./scope.sh /path/to/repo
 
@@ -94,10 +98,11 @@ run_loc_tool() {
 # ---------------------------------------------------------------------------
 build_manifest() {
     local dir="$1"
-    local files_json="["
-    local first=true
     local total_loc=0
     local test_loc=0
+    local tmpfile
+    tmpfile=$(mktemp)
+    _TMPFILES+=("$tmpfile")
 
     while IFS= read -r -d '' file; do
         local rel_path="${file#"$dir"/}"
@@ -116,13 +121,8 @@ build_manifest() {
             *) lang="other" ;;
         esac
 
-        if [[ "$first" == "true" ]]; then
-            first=false
-        else
-            files_json+=","
-        fi
-
-        files_json+="{\"path\":\"$rel_path\",\"loc\":$loc,\"language\":\"$lang\"}"
+        # Write tab-separated records; Python will handle JSON escaping
+        printf '%s\t%s\t%s\n' "$rel_path" "$loc" "$lang" >> "$tmpfile"
 
         # Accumulate totals
         if [[ "$rel_path" == tests/* ]] || [[ "$rel_path" == */tests/* ]] || [[ "$rel_path" == *_test.rs ]] || [[ "$rel_path" == *test_*.rs ]]; then
@@ -136,7 +136,20 @@ build_manifest() {
         -path '*/node_modules/*' -prune -o \
         \( -name '*.rs' -o -name '*.ts' -o -name '*.js' -o -name '*.toml' -o -name '*.py' \) -print0 2>/dev/null)
 
-    files_json+="]"
+    # Use Python to generate properly escaped JSON from TSV
+    local files_json
+    files_json=$(python3 -c "
+import json, sys
+files = []
+for line in open(sys.argv[1]):
+    line = line.rstrip('\n')
+    if not line:
+        continue
+    parts = line.split('\t', 2)
+    if len(parts) == 3:
+        files.append({'path': parts[0], 'loc': int(parts[1]), 'language': parts[2]})
+json.dump(files, sys.stdout)
+" "$tmpfile" 2>/dev/null || echo '[]')
 
     echo "$files_json" "$total_loc" "$test_loc"
 }
@@ -169,15 +182,17 @@ main() {
         test_loc=0
     fi
 
-    # Output final JSON
-    cat <<ENDJSON
-{
-  "framework": "$framework",
-  "files": $files_json,
-  "total_loc": $total_loc,
-  "test_loc": $test_loc
+    # Output final JSON via Python for safe serialization
+    python3 -c "
+import json, sys
+data = {
+    'framework': sys.argv[1],
+    'files': json.loads(sys.argv[2]),
+    'total_loc': int(sys.argv[3]),
+    'test_loc': int(sys.argv[4]),
 }
-ENDJSON
+json.dump(data, sys.stdout, indent=2)
+" "$framework" "$files_json" "$total_loc" "$test_loc"
 }
 
 main
