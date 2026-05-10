@@ -33,7 +33,7 @@ There are two ways to run it: **locally** (for development) or via **Docker** (o
 npm run setup          # checks deps, installs node_modules + Python packages
 
 # 2. Authenticate Claude CLI (one-time)
-claude                 # follow the auth link in your browser
+claude auth login            # opens browser login, returns to shell when complete
 
 # 3. Start dev server (server + client with hot reload)
 npm run dev            # server on :3000, client on :5173
@@ -70,8 +70,8 @@ Docker bundles Node, Python, tree-sitter, ast-grep, and the Claude CLI into a si
 docker compose up -d
 
 # 2. Authenticate Claude CLI (one-time, interactive)
-docker compose exec daybreak claude
-# Follow the auth link in your browser, then exit with Ctrl+C
+docker compose exec daybreak claude auth login
+# Opens browser login, returns to shell when complete
 
 # 3. Open the dashboard
 open http://localhost:3000

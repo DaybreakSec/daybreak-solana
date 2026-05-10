@@ -40,7 +40,7 @@ See [GETTING-STARTED.md](GETTING-STARTED.md) for full setup instructions.
 
 ```bash
 npm run setup              # check deps, install packages
-claude                     # one-time auth
+claude auth login                # one-time browser login
 npm run dev                # server :3000 + client :5173
 ```
 
@@ -48,7 +48,7 @@ npm run dev                # server :3000 + client :5173
 
 ```bash
 docker compose up -d
-docker compose exec daybreak claude    # one-time auth
+docker compose exec daybreak claude auth login    # one-time browser login
 # open http://localhost:3000
 ```
 

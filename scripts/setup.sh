@@ -47,15 +47,11 @@ fi
 # ---------------------------------------------------------------
 echo ""
 echo "Node dependencies"
-if [[ -d "$ROOT_DIR/node_modules" ]]; then
-    ok "node_modules exists"
+echo "  Installing npm dependencies..."
+if (cd "$ROOT_DIR" && npm install --no-audit --no-fund 2>&1 | tail -1); then
+    ok "npm install complete"
 else
-    echo "  Installing npm dependencies..."
-    if (cd "$ROOT_DIR" && npm install --no-audit --no-fund 2>&1 | tail -1); then
-        ok "npm install complete"
-    else
-        bad "npm install failed"
-    fi
+    bad "npm install failed"
 fi
 
 # ---------------------------------------------------------------
