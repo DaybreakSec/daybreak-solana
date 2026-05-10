@@ -5,8 +5,11 @@ target/
 .env
 *.log
 state/
+saved-audits/
 .DS_Store
 __pycache__/
 *.pyc
 FUTURE-*.md
 THREAT-MODEL.md
+research/
+references/sample-reports/

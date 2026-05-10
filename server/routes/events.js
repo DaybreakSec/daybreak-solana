@@ -3,7 +3,7 @@ const bus = require('../lib/event-bus');
 const { readProgress, readFindings } = require('../lib/state-io');
 const router = express.Router();
 
-// GET /api/scan/events — SSE endpoint for real-time pipeline updates
+// GET /api/scan/events - SSE endpoint for real-time pipeline updates
 router.get('/', (req, res) => {
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',

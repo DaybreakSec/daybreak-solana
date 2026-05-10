@@ -241,6 +241,80 @@ def extract_state_guards(tree: tree_sitter.Tree, source: bytes, file_path: str) 
     return results
 
 
+def build_transition_graphs(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Build transition graph entries per state enum from collected results.
+
+    Cross-references state_enum entries with state_transition entries to build
+    a graph of transitions between states, infer terminal states, and flag
+    unguarded transitions.
+    """
+    graphs = []
+
+    # Collect all state enums
+    enums = [r for r in results if r["type"] == "state_enum"]
+    transitions = [r for r in results if r["type"] == "state_transition"]
+
+    for enum_entry in enums:
+        enum_name = enum_entry["enum_name"]
+        variants = enum_entry["variants"]
+
+        # Build transition map: for each variant, collect target states
+        transition_map: dict[str, list[str]] = {v: [] for v in variants}
+        unguarded: list[dict[str, Any]] = []
+
+        for trans in transitions:
+            new_state = trans["new_state"]
+
+            # Extract the variant name from qualified paths like "Status::Active"
+            target_variant = new_state
+            if "::" in new_state:
+                parts = new_state.split("::")
+                # Check if the enum qualifier matches this enum
+                if parts[0] != enum_name:
+                    continue
+                target_variant = parts[-1]
+            elif target_variant not in variants:
+                continue
+
+            if target_variant not in variants:
+                continue
+
+            # Try to infer the source state from guard context
+            context = trans.get("context", "")
+            source_variant = None
+            for v in variants:
+                # Look for patterns like "state == Status::Open" or "status == Open"
+                if re.search(rf"==\s*(?:{enum_name}::)?{v}\b", context):
+                    source_variant = v
+                    break
+
+            if source_variant and target_variant not in transition_map.get(source_variant, []):
+                transition_map.setdefault(source_variant, []).append(target_variant)
+
+            if not trans.get("has_guard", True):
+                unguarded.append({
+                    "from": source_variant or "unknown",
+                    "to": target_variant,
+                    "file": trans["file"],
+                    "line": trans["line"],
+                })
+
+        # Identify terminal states: variants with no outgoing transitions
+        terminal_states = [v for v in variants if len(transition_map.get(v, [])) == 0]
+
+        graphs.append({
+            "type": "transition_graph",
+            "enum_name": enum_name,
+            "variants": variants,
+            "transitions": transition_map,
+            "terminal_states": terminal_states,
+            "unguarded_transitions": unguarded,
+            "file": enum_entry["file"],
+        })
+
+    return graphs
+
+
 def process_file(parser: tree_sitter.Parser, file_path: Path, root_dir: Path) -> list[dict[str, Any]]:
     """Process a single Rust file."""
     try:
@@ -289,6 +363,10 @@ def main() -> None:
     else:
         print(f"Error: '{target}' is not a file or directory.", file=sys.stderr)
         sys.exit(1)
+
+    # Build transition graphs from collected state enums and transitions
+    graphs = build_transition_graphs(all_results)
+    all_results.extend(graphs)
 
     json.dump(all_results, sys.stdout, indent=2)
     print()

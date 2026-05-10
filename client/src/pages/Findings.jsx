@@ -8,6 +8,7 @@ import KbdHint from '../components/KbdHint';
 import ActionButton from '../components/ActionButton';
 import { useToast } from '../components/Toast';
 import { useRequireState } from '../hooks/useRouteGuard';
+import { pageHeadingStyle, inputStyle } from '../styles/shared';
 
 const SEVERITY_FILTERS = ['all', 'critical', 'high', 'medium', 'low'];
 const SORT_OPTIONS = [
@@ -98,7 +99,7 @@ export default function Findings({ onStatusChange }) {
     return () => clearInterval(poll);
   }, [fetchFindings]);
 
-  async function updateFinding(id, update) {
+  const updateFinding = useCallback(async (id, update) => {
     try {
       const res = await fetch(`/api/findings/${id}`, {
         method: 'PUT',
@@ -113,7 +114,7 @@ export default function Findings({ onStatusChange }) {
       toast('Failed to update finding: ' + err.message, 'error');
     }
     fetchFindings();
-  }
+  }, [fetchFindings, toast]);
 
   async function handleBulkTriage(status) {
     if (bulkSelected.size === 0) return;
@@ -195,7 +196,7 @@ export default function Findings({ onStatusChange }) {
     }
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [findings, selectedId]);
+  }, [findings, selectedId, updateFinding]);
 
   const { pending, valid, dismissed } = bucketFindings(findings);
   const selectedFinding = findings.find(f => f.id === selectedId);
@@ -240,7 +241,7 @@ export default function Findings({ onStatusChange }) {
         <SectionLabel>audit · {audit?.repoUrl?.split('/').pop()?.replace('.git', '') || audit?.localPath?.split('/').pop() || 'triage'}</SectionLabel>
         <h1
           className="font-display text-text-primary mt-1"
-          style={{ fontSize: '28px', lineHeight: '1.15', fontWeight: 500 }}
+          style={pageHeadingStyle}
         >
           findings
         </h1>
@@ -259,12 +260,7 @@ export default function Findings({ onStatusChange }) {
           placeholder="search findings..."
           className="font-mono text-text-primary placeholder-text-tertiary"
           style={{
-            fontSize: '13px',
-            padding: '6px 10px',
-            border: '0.5px solid var(--color-border-default)',
-            borderRadius: 'var(--radius-md)',
-            outline: 'none',
-            background: 'transparent',
+            ...inputStyle,
             width: '200px',
           }}
           onFocus={e => e.target.style.borderColor = 'var(--color-border-strong)'}
@@ -396,7 +392,7 @@ export default function Findings({ onStatusChange }) {
           ))}
         </div>
 
-        {/* Detail panel — right side, sticky */}
+        {/* Detail panel - right side, sticky */}
         <div style={{ flex: '1 1 45%', position: 'sticky', top: '72px', alignSelf: 'start', maxHeight: 'calc(100vh - 100px)', overflowY: 'auto' }}>
           {selectedFinding ? (
             <DetailPanel

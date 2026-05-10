@@ -60,9 +60,9 @@ describe('readSourceFiles', () => {
     const result = readSourceFiles(tmpDir, files);
     expect(result.includedFiles).toContain('lib.rs');
     expect(result.includedFiles).toContain('utils.ts');
-    expect(result.formatted).toContain('### File: lib.rs');
-    expect(result.formatted).toContain('```rust');
-    expect(result.formatted).toContain('```typescript');
+    expect(result.formatted).toContain('<source-file path="lib.rs">');
+    expect(result.formatted).toContain('<source-file path="utils.ts">');
+    expect(result.formatted).toContain('</source-file>');
     expect(result.totalLoc).toBeGreaterThan(0);
     expect(result.warning).toBeNull();
   });
@@ -107,5 +107,77 @@ describe('readSourceFiles', () => {
     ];
     // validatePath is called outside the try/catch, so traversal causes a throw
     expect(() => readSourceFiles(tmpDir, files)).toThrow('Path escapes root directory');
+  });
+
+  describe('excludedByError tracking', () => {
+    it('populates excludedByError for unreadable files', () => {
+      // Create a file and make it unreadable
+      const unreadable = path.join(tmpDir, 'noperm.rs');
+      fs.writeFileSync(unreadable, 'fn secret() {}');
+      fs.chmodSync(unreadable, 0o000);
+
+      const files = [
+        { path: 'noperm.rs', loc: 1 },
+        { path: 'lib.rs', loc: 3 },
+      ];
+      const result = readSourceFiles(tmpDir, files);
+
+      expect(result.excludedByError.length).toBeGreaterThan(0);
+      expect(result.excludedByError[0]).toHaveProperty('path', 'noperm.rs');
+      expect(result.excludedByError[0]).toHaveProperty('reason');
+      expect(result.warning).toContain('unreadable');
+      expect(result.includedFiles).toContain('lib.rs');
+
+      // Cleanup: restore permissions so afterAll can remove the temp dir
+      fs.chmodSync(unreadable, 0o644);
+    });
+
+    it('populates excludedByError for non-existent files after validatePath', () => {
+      // File does not exist but path is valid (no traversal)
+      const files = [
+        { path: 'does-not-exist.rs', loc: 1 },
+        { path: 'lib.rs', loc: 3 },
+      ];
+      const result = readSourceFiles(tmpDir, files);
+
+      expect(result.excludedByError.length).toBe(1);
+      expect(result.excludedByError[0].path).toBe('does-not-exist.rs');
+      expect(result.excludedByError[0].reason).toMatch(/ENOENT|no such file/i);
+      expect(result.includedFiles).toContain('lib.rs');
+    });
+  });
+
+  describe('combined warning messages', () => {
+    it('includes both budget and error messages when both occur', () => {
+      // huge.rs will exceed budget, non-existent file triggers error
+      const files = [
+        { path: 'huge.rs', loc: 1 },
+        { path: 'does-not-exist.rs', loc: 1 },
+        { path: 'lib.rs', loc: 3 },
+      ];
+      const result = readSourceFiles(tmpDir, files);
+
+      // Should have budget exclusion for huge.rs
+      expect(result.excludedByBudget).toContain('huge.rs');
+      // Should have error exclusion for non-existent file
+      expect(result.excludedByError.length).toBe(1);
+      // Warning should contain both messages
+      expect(result.warning).toContain('excluded by budget');
+      expect(result.warning).toContain('unreadable');
+    });
+
+    it('warning only mentions errors when no budget overflow', () => {
+      // Small files only, one non-existent
+      const files = [
+        { path: 'lib.rs', loc: 3 },
+        { path: 'ghost-file.rs', loc: 1 },
+      ];
+      const result = readSourceFiles(tmpDir, files);
+
+      expect(result.excludedByBudget).toHaveLength(0);
+      expect(result.excludedByError.length).toBe(1);
+      expect(result.warning).toContain('unreadable');
+      expect(result.warning).not.toContain('budget');
+    });
   });
 });

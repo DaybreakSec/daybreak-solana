@@ -43,7 +43,7 @@ export default function Setup() {
       .then(data => {
         if (data && data.warnings) setWarnings(data.warnings);
       })
-      .catch(() => { /* sanitize may not exist yet — not an error */ });
+      .catch(() => { /* sanitize may not exist yet, not an error */ });
   }, []);
 
   const fetchBrowse = useCallback((dir) => {
@@ -160,7 +160,7 @@ export default function Setup() {
             {warnings.map((w, i) => (
               <div key={i} className="font-mono text-text-secondary" style={{ fontSize: '13px' }}>
                 <span className="text-dawn-coral">{w.file}:{w.line}</span>
-                <span className="text-text-tertiary"> — {w.pattern}</span>
+                <span className="text-text-tertiary">: {w.pattern}</span>
               </div>
             ))}
           </div>

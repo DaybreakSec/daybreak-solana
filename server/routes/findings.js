@@ -79,6 +79,12 @@ router.put('/:id', async (req, res) => {
     if (req.body.severity !== undefined && !VALID_SEVERITIES.includes(req.body.severity)) {
       return res.status(400).json({ error: `Invalid severity. Must be one of: ${VALID_SEVERITIES.join(', ')}` });
     }
+    if (req.body.triageReason !== undefined && (typeof req.body.triageReason !== 'string' || req.body.triageReason.length > 2000)) {
+      return res.status(400).json({ error: 'triageReason must be a string of at most 2000 characters' });
+    }
+    if (req.body.notes !== undefined && (typeof req.body.notes !== 'string' || req.body.notes.length > 5000)) {
+      return res.status(400).json({ error: 'notes must be a string of at most 5000 characters' });
+    }
 
     const result = await withLock(() => {
       const data = readFindings();
@@ -111,11 +117,17 @@ router.post('/bulk-triage', async (req, res) => {
   if (!Array.isArray(ids) || ids.length === 0) {
     return res.status(400).json({ error: 'ids must be a non-empty array' });
   }
+  if (ids.length > 500) {
+    return res.status(400).json({ error: 'Cannot bulk-triage more than 500 findings at once' });
+  }
   if (!ids.every(id => isValidFindingId(id))) {
     return res.status(400).json({ error: 'All ids must be valid finding IDs' });
   }
   if (!VALID_STATUSES.includes(status)) {
     return res.status(400).json({ error: `Invalid status. Must be one of: ${VALID_STATUSES.join(', ')}` });
+  }
+  if (triageReason !== undefined && (typeof triageReason !== 'string' || triageReason.length > 2000)) {
+    return res.status(400).json({ error: 'triageReason must be a string of at most 2000 characters' });
   }
 
   try {

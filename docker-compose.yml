@@ -1,0 +1,32 @@
+services:
+  daybreak:
+    build: .
+    init: true
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=512M,noexec,nosuid
+    deploy:
+      resources:
+        limits:
+          memory: 4g
+          cpus: '2.0'
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    volumes:
+      - claude-auth:/home/daybreak/.claude
+      - ./state:/app/state
+      - ./saved-audits:/app/saved-audits
+    environment:
+      - PORT=3000
+      - BIND_HOST=0.0.0.0
+
+volumes:
+  claude-auth:

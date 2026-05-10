@@ -23,10 +23,16 @@ export default function Export() {
   const [loading, setLoading] = useState(false);
   const [repoError, setRepoError] = useState('');
   const [audit, setAudit] = useState(null);
+  const [saveName, setSaveName] = useState('');
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     fetch('/api/state/audit').then(r => r.json()).then(data => {
-      if (data) setAudit(data);
+      if (data) {
+        setAudit(data);
+        const repoName = data.repoUrl?.split('/').pop()?.replace('.git', '') || data.localPath?.split('/').pop() || 'audit';
+        setSaveName(`${repoName}-${new Date().toISOString().split('T')[0]}`);
+      }
     }).catch(err => toast('Failed to load audit state: ' + err.message, 'error'));
   }, []);
 
@@ -368,6 +374,55 @@ export default function Export() {
               )}
             </div>
           )}
+
+          {/* Save audit */}
+          <div style={{ borderTop: '0.5px solid var(--color-border-subtle)', paddingTop: '16px' }}>
+            <SectionLabel>save audit</SectionLabel>
+            <input
+              type="text"
+              value={saveName}
+              onChange={e => setSaveName(e.target.value)}
+              placeholder="audit name"
+              className="w-full font-mono text-text-primary mt-2"
+              style={{
+                fontSize: '14px',
+                padding: '8px 0',
+                border: 'none',
+                borderBottom: '0.5px solid var(--color-border-default)',
+                outline: 'none',
+                background: 'transparent',
+              }}
+            />
+            <ActionButton
+              onClick={async () => {
+                if (!saveName.trim()) {
+                  toast('Enter a name for the audit', 'error');
+                  return;
+                }
+                setSaving(true);
+                try {
+                  const res = await fetch('/api/audits', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: saveName.trim() }),
+                  });
+                  if (!res.ok) {
+                    const data = await res.json();
+                    throw new Error(data.error || `Server returned ${res.status}`);
+                  }
+                  toast('Audit saved', 'success');
+                } catch (err) {
+                  toast('Failed to save audit: ' + err.message, 'error');
+                } finally {
+                  setSaving(false);
+                }
+              }}
+              disabled={saving || !saveName.trim()}
+              style={{ width: '100%', justifyContent: 'center', marginTop: '8px' }}
+            >
+              {saving ? 'saving...' : 'save audit'}
+            </ActionButton>
+          </div>
         </div>
 
         {/* Preview column */}

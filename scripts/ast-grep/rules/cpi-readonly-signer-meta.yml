@@ -1,0 +1,14 @@
+id: cpi-readonly-signer-meta
+message: >-
+  AccountMeta::new_readonly with signer=true detected. Verify the
+  account is actually validated as a signer before being passed in CPI.
+  Incorrectly marking an account as a signer in AccountMeta does not
+  enforce signing; it tells the runtime to check for it.
+severity: warning
+language: rust
+rule:
+  pattern: "AccountMeta::new_readonly($ACCOUNT, true)"
+note: >-
+  In CPI, marking an account as is_signer=true in AccountMeta means
+  the CPI target expects it to be a signer. Verify the account is
+  indeed a signer in the calling instruction's context.

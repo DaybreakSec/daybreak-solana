@@ -109,10 +109,10 @@ write('sanitize.json', {
 
 // ── findings.json ───────────────────────────────────────────────────────────
 //
-// 12 findings — 2 crit, 3 high, 3 med, 2 low, 2 info
+// 12 findings: 2 crit, 3 high, 3 med, 2 low, 2 info
 // Kanban: 7 pending, 2 valid, 3 dismissed
 // All 5 agents represented; realistic Solana bug classes
-// Raw Rust code — CodeBlock tokenizes client-side
+// Raw Rust code, CodeBlock tokenizes client-side
 
 const findings = [
   // ═══ CRITICAL ═════════════════════════════════════════════════════════════
@@ -462,7 +462,7 @@ let current_value = vault.deposited_amount
     .ok_or(VaultError::MathOverflow)?
     .checked_div(10000)
     .ok_or(VaultError::MathOverflow)?;
-// rounds down — protocol loses dust on each tx`,
+// rounds down, protocol loses dust on each tx`,
     highlightLines: [178, 179, 180, 181, 182],
     recommendation:
       'Consider rounding up for protocol fees using ' +
@@ -476,4 +476,4 @@ write('findings.json', { findings });
 // ── Summary ─────────────────────────────────────────────────────────────────
 
 const flag = scanning ? ' (--scanning)' : '';
-console.log(`\n  seed complete${flag} — 5 files written to state/\n`);
+console.log(`\n  seed complete${flag}: 5 files written to state/\n`);

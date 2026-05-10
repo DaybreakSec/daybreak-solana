@@ -41,7 +41,7 @@ describe('filterLeads', () => {
   it('returns empty array for unknown agent key with no keywords', () => {
     // Unknown agent gets undefined keywords, which triggers `!keywords` -> return leads
     // Actually: AGENT_LEAD_KEYWORDS['unknown'] = undefined -> !keywords = true -> returns all leads
-    // But per the plan, we want to test "returns empty array" — let's check the actual code behavior
+    // But per the plan, we want to test "returns empty array" - let's check the actual code behavior
     const result = filterLeads(SAMPLE_LEADS, 'unknown-agent');
     // Code: if (!keywords || keywords.length === 0) return leads;
     // Since 'unknown-agent' is not in the map, keywords is undefined, so it returns all leads

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import AgentCard from '../components/AgentCard';
 import HorizonMeter from '../components/HorizonMeter';
 import TokenBudgetMeter from '../components/TokenBudgetMeter';
@@ -7,6 +7,7 @@ import SectionLabel from '../components/SectionLabel';
 import ActionButton from '../components/ActionButton';
 import { formatDuration, formatTokens, formatCost } from '../utils/format';
 import { useToast } from '../components/Toast';
+import { pageHeadingStyle } from '../styles/shared';
 
 const AGENT_ORDER = [
   'scout',
@@ -40,10 +41,10 @@ export default function Audit({ onStatusChange }) {
   const [threatModel, setThreatModel] = useState(null);
   const [logOpen, setLogOpen] = useState(false);
   const [logLines, setLogLines] = useState([]);
-  const [tick, setTick] = useState(0);
   const [scanStatus, setScanStatus] = useState(null);
   const [cancelling, setCancelling] = useState(false);
   const [costData, setCostData] = useState(null);
+  const [showCompletion, setShowCompletion] = useState(false);
   const completionFired = useRef(false);
   const toast = useToast();
 
@@ -53,34 +54,34 @@ export default function Audit({ onStatusChange }) {
     }).catch(() => {});
   }, []);
 
-  // Tick every second for elapsed timer while agents are scanning
-  useEffect(() => {
-    const hasScanning = progress && Object.values(progress.agents || {}).some(
-      a => a.status === 'scanning'
-    );
-    if (!hasScanning) return;
-    const interval = setInterval(() => setTick(t => t + 1), 1000);
-    return () => clearInterval(interval);
-  }, [progress]);
-
   // SSE for real-time progress, with polling fallback
   useEffect(() => {
     let active = true;
     let sseConnected = false;
 
+    function safeFetch(url) {
+      return fetch(url).then(r => {
+        if (!r.ok) return null;
+        return r.json();
+      }).catch(err => {
+        console.warn('[safeFetch]', url, err.message || err);
+        return null;
+      });
+    }
+
     function poll() {
-      fetch('/api/state/progress').then(r => r.json()).then(data => {
-        if (active) setProgress(data);
-      }).catch(err => toast('Failed to load progress: ' + err.message, 'error'));
-      fetch('/api/findings').then(r => r.json()).then(data => {
-        if (active) setFindings(data.findings || []);
-      }).catch(() => {});
-      fetch('/api/scan/status').then(r => r.json()).then(data => {
-        if (active) setScanStatus(data);
-      }).catch(() => {});
-      fetch('/api/state/threat-model').then(r => r.json()).then(data => {
+      safeFetch('/api/state/progress').then(data => {
+        if (active && data) setProgress(data);
+      });
+      safeFetch('/api/findings').then(data => {
+        if (active && data) setFindings(data.findings || []);
+      });
+      safeFetch('/api/scan/status').then(data => {
+        if (active && data) setScanStatus(data);
+      });
+      safeFetch('/api/state/threat-model').then(data => {
         if (active && data) setThreatModel(data);
-      }).catch(() => {});
+      });
     }
 
     // Initial fetch
@@ -107,10 +108,9 @@ export default function Audit({ onStatusChange }) {
 
       es.addEventListener('finding', (e) => {
         if (!active) return;
-        // Refresh findings from server to get full data
-        fetch('/api/findings').then(r => r.json()).then(data => {
-          if (active) setFindings(data.findings || []);
-        }).catch(() => {});
+        safeFetch('/api/findings').then(data => {
+          if (active && data) setFindings(data.findings || []);
+        });
       });
 
       es.addEventListener('cost', (e) => {
@@ -132,10 +132,19 @@ export default function Audit({ onStatusChange }) {
       // SSE not available, rely on polling
     }
 
-    // Polling fallback — check sseConnected each tick so we slow down once SSE is live
+    // Polling fallback: when SSE is live, only poll endpoints SSE doesn't cover
     const interval = setInterval(() => {
       if (!active) return;
-      poll();
+      if (sseConnected) {
+        safeFetch('/api/scan/status').then(data => {
+          if (active && data) setScanStatus(data);
+        });
+        safeFetch('/api/state/threat-model').then(data => {
+          if (active && data) setThreatModel(data);
+        });
+      } else {
+        poll();
+      }
     }, 5000);
 
     return () => {
@@ -145,7 +154,7 @@ export default function Audit({ onStatusChange }) {
     };
   }, []);
 
-  // Completion transition (5.2)
+  // Completion transition
   useEffect(() => {
     if (!progress || completionFired.current) return;
     const allDone = progress.phase === 'done' || progress.phase === 'done-with-errors';
@@ -160,31 +169,19 @@ export default function Audit({ onStatusChange }) {
     completionFired.current = true;
     onStatusChange?.('complete');
 
-    // background warm shift
-    document.documentElement.style.setProperty('--color-bg-base', '#1A1F38');
-    document.documentElement.style.transition = 'background 3s linear';
+    // background warm shift via CSS class
+    document.documentElement.classList.add('completion-bg-shift');
+    setShowCompletion(true);
 
-    // sweeping gold line
-    const line = document.createElement('div');
-    line.style.cssText = `
-      position: fixed; bottom: 0; left: 0; width: 100%; height: 1px;
-      background: var(--color-dawn-gold);
-      transform: translateX(-100%);
-      transition: transform 3s linear;
-      z-index: 9999;
-      pointer-events: none;
-    `;
-    document.body.appendChild(line);
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        line.style.transform = 'translateX(0)';
-      });
-    });
-    setTimeout(() => {
-      line.remove();
-      document.documentElement.style.removeProperty('--color-bg-base');
-      document.documentElement.style.transition = '';
+    const timer = setTimeout(() => {
+      setShowCompletion(false);
+      document.documentElement.classList.remove('completion-bg-shift');
     }, 3500);
+
+    return () => {
+      clearTimeout(timer);
+      document.documentElement.classList.remove('completion-bg-shift');
+    };
   }, [progress, findings, onStatusChange]);
 
   const agents = progress?.agents || {};
@@ -209,24 +206,29 @@ export default function Audit({ onStatusChange }) {
     : scanKeys;
 
   // build severity counts for horizon meter
-  const sevCounts = { critical: 0, high: 0, medium: 0, low: 0 };
-  for (const f of findings) {
-    const s = f.severity?.toLowerCase();
-    if (s && sevCounts[s] !== undefined) sevCounts[s]++;
-  }
+  const sevCounts = useMemo(() => {
+    const counts = { critical: 0, high: 0, medium: 0, low: 0 };
+    for (const f of findings) {
+      const s = f.severity?.toLowerCase();
+      if (s && counts[s] !== undefined) counts[s]++;
+    }
+    return counts;
+  }, [findings]);
 
   // agent findings grouped
-  const agentFindings = {};
-  for (const f of findings) {
-    if (!agentFindings[f.agent]) agentFindings[f.agent] = [];
-    agentFindings[f.agent].push(f);
-  }
+  const agentFindings = useMemo(() => {
+    const grouped = {};
+    for (const f of findings) {
+      if (!grouped[f.agent]) grouped[f.agent] = [];
+      grouped[f.agent].push(f);
+    }
+    return grouped;
+  }, [findings]);
 
   // Compute max tokens across all agents for shared baseline
-  const maxTokensAcrossAgents = Math.max(
-    0,
-    ...Object.values(agents).map(a => a.tokensUsed || 0)
-  );
+  const maxTokensAcrossAgents = useMemo(() => {
+    return Math.max(0, ...Object.values(agents).map(a => a.tokensUsed || 0));
+  }, [agents]);
 
   // Determine overall scan status
   const isDone = progress?.phase === 'done' || progress?.phase === 'done-with-errors';
@@ -251,8 +253,8 @@ export default function Audit({ onStatusChange }) {
   const prescanWarning = progress?.prescanWarning;
   const prescanBannerText = prescanWarning
     ? isDone
-      ? 'static analysis was unavailable \u2014 agents ran without pre-narrowed targets'
-      : 'static analysis unavailable \u2014 agents running without pre-narrowed targets'
+      ? 'static analysis was unavailable; agents ran without pre-narrowed targets'
+      : 'static analysis unavailable; agents running without pre-narrowed targets'
     : null;
 
   async function retryPrescan() {
@@ -281,13 +283,18 @@ export default function Audit({ onStatusChange }) {
 
   return (
     <div>
+      {/* Completion gold sweep line */}
+      {showCompletion && (
+        <div className="completion-sweep" />
+      )}
+
       {/* Page header */}
       <div className="mb-6">
         <SectionLabel>{auditLabel}</SectionLabel>
         <div className="flex items-center gap-3 mt-1">
           <h1
             className="font-display text-text-primary"
-            style={{ fontSize: '28px', lineHeight: '1.15', fontWeight: 500 }}
+            style={pageHeadingStyle}
           >
             live progress
           </h1>
@@ -372,9 +379,8 @@ export default function Audit({ onStatusChange }) {
               agent={{
                 name: AGENT_DISPLAY[key] || key.replace(/-/g, ' '),
                 status: info.status,
-                currentFile: info.startedAt && info.status === 'scanning'
-                  ? `scanning (${formatDuration(Date.now() - new Date(info.startedAt).getTime())})`
-                  : info.currentFile,
+                startedAt: info.startedAt,
+                currentFile: info.currentFile,
                 durationMs: info.durationMs,
                 tokensUsed: info.tokensUsed,
                 costUsd: info.costUsd,
@@ -422,7 +428,7 @@ export default function Audit({ onStatusChange }) {
       {/* Horizon meter */}
       <HorizonMeter findings={sevCounts} totalLoc={loc} />
 
-      {/* Collapsible log strip — only when there are log lines */}
+      {/* Collapsible log strip - only when there are log lines */}
       {logLines.length > 0 && (
         <div className="mt-6">
           <button

@@ -1,4 +1,4 @@
-/* Mona Sans — self-hosted */
+/* Mona Sans - self-hosted */
 @font-face {
   font-family: "Mona Sans";
   src: url("/fonts/MonaSans-Regular.woff2") format("woff2");
@@ -77,10 +77,34 @@ html, body, #root {
   min-height: 100vh;
 }
 
-/* Focus ring — all interactive elements */
+/* Focus ring - all interactive elements */
 :focus-visible {
   outline: 2px solid var(--color-dawn-amber);
   outline-offset: 2px;
+}
+
+/* Completion background shift */
+.completion-bg-shift {
+  --color-bg-base: #1A1F38;
+  transition: background 3s linear;
+}
+
+/* Completion gold sweep line */
+.completion-sweep {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 1px;
+  background: var(--color-dawn-gold);
+  z-index: 9999;
+  pointer-events: none;
+  animation: sweep-right 3s linear forwards;
+}
+
+@keyframes sweep-right {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
 }
 
 /* Reduced motion */

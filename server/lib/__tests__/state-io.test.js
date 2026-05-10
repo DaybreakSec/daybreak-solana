@@ -73,7 +73,7 @@ describe('withLock', () => {
       });
     };
 
-    // Run two writes concurrently — lock should serialize them
+    // Run two writes concurrently; lock should serialize them
     const [r1, r2] = await Promise.all([writer(1), writer(2)]);
 
     const final = stateIo.readJSON('counter.json');
@@ -82,20 +82,18 @@ describe('withLock', () => {
     expect([r1, r2].sort()).toEqual([1, 3]);
   });
 
-  it('deadlock guard: second call proceeds after timeout', async () => {
+  it('deadlock guard: second call throws after timeout instead of corrupting', async () => {
     // First lock that never resolves naturally
     const neverResolve = stateIo.withLock(() => {
       return new Promise(() => {}); // never resolves
     });
 
-    // Second lock should proceed after ~10s timeout
+    // Second lock should reject after ~10s timeout (not silently proceed)
     const start = Date.now();
-    const result = await stateIo.withLock(() => {
-      return 'completed';
-    });
+    await expect(stateIo.withLock(() => 'completed'))
+      .rejects.toThrow('lock held longer than 10s');
 
     const elapsed = Date.now() - start;
-    expect(result).toBe('completed');
     // Should have waited roughly 10s (tolerance: 8-15s)
     expect(elapsed).toBeGreaterThanOrEqual(8000);
     expect(elapsed).toBeLessThan(15000);

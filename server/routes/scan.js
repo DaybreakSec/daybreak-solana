@@ -7,9 +7,10 @@ const router = express.Router();
 
 const fs = require('fs');
 
-const BLOCKED_DIRS = ['/etc', '/var', '/proc', '/sys', '/dev', '/root'];
+const BLOCKED_DIRS = ['/etc', '/var', '/proc', '/sys', '/dev', '/root', '/boot', '/lost+found'];
+const BLOCKED_SUFFIXES = ['/.ssh', '/.gnupg', '/.aws', '/.config/claude', '/.env'];
 
-// GET /api/scan/browse — list directories for local path selection
+// GET /api/scan/browse - list directories for local path selection
 router.get('/browse', (req, res) => {
   const dir = req.query.dir || '/';
   const resolved = path.resolve(dir);
@@ -18,6 +19,13 @@ router.get('/browse', (req, res) => {
   for (const blocked of BLOCKED_DIRS) {
     if (resolved === blocked || resolved.startsWith(blocked + '/')) {
       return res.status(403).json({ error: `Cannot browse system directory: ${blocked}` });
+    }
+  }
+
+  // Block sensitive dotfile directories
+  for (const suffix of BLOCKED_SUFFIXES) {
+    if (resolved.endsWith(suffix) || resolved.includes(suffix + '/')) {
+      return res.status(403).json({ error: 'Cannot browse sensitive directory' });
     }
   }
 
@@ -53,7 +61,7 @@ router.get('/browse', (req, res) => {
   }
 });
 
-// POST /api/scan/scope — generate scope analysis for a target
+// POST /api/scan/scope - generate scope analysis for a target
 router.post('/scope', (req, res) => {
   const audit = readJSON('audit.json');
   if (!audit) {
@@ -67,7 +75,7 @@ router.post('/scope', (req, res) => {
     return res.status(400).json({ error: err.message });
   }
 
-  // Return 202 immediately — Scope page polls for the result
+  // Return 202 immediately. Scope page polls for the result.
   res.status(202).json({ ok: true, message: 'Scope analysis started' });
 
   // Spawn scope.sh in the background
@@ -101,7 +109,7 @@ router.post('/scope', (req, res) => {
   });
 });
 
-// POST /api/scan/start — kick off the async scan pipeline
+// POST /api/scan/start - kick off the async scan pipeline
 router.post('/start', (req, res) => {
   // Check for active scan
   if (getActiveScan()) {
@@ -125,13 +133,13 @@ router.post('/start', (req, res) => {
   // Return 202 immediately, run pipeline in background
   res.status(202).json({ ok: true, message: 'Scan started' });
 
-  // Fire and forget — errors handled internally
+  // Fire and forget; errors handled internally
   startPipeline(audit, scope).catch(err => {
     console.error('Pipeline fatal error:', err);
   });
 });
 
-// GET /api/scan/status — current scan status with file-based fallback
+// GET /api/scan/status - current scan status with file-based fallback
 router.get('/status', (req, res) => {
   const scan = getActiveScan();
   if (scan) {
@@ -155,7 +163,7 @@ router.get('/status', (req, res) => {
   return res.json({ running: false });
 });
 
-// POST /api/scan/retry-prescan — re-run prescan and update progress
+// POST /api/scan/retry-prescan - re-run prescan and update progress
 router.post('/retry-prescan', async (req, res) => {
   const audit = readJSON('audit.json');
   if (!audit || (!audit.localPath && !audit.repoUrl)) {
@@ -179,7 +187,7 @@ router.post('/retry-prescan', async (req, res) => {
   }
 });
 
-// POST /api/scan/cancel — stop the active scan
+// POST /api/scan/cancel - stop the active scan
 router.post('/cancel', (req, res) => {
   const cancelled = cancelScan();
   if (!cancelled) {

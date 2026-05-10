@@ -4,6 +4,7 @@ import SectionLabel from '../components/SectionLabel';
 import ActionButton from '../components/ActionButton';
 import { useToast } from '../components/Toast';
 import { useRequireState } from '../hooks/useRouteGuard';
+import { pageHeadingStyle } from '../styles/shared';
 
 export default function Scope() {
   const navigate = useNavigate();
@@ -26,9 +27,13 @@ export default function Scope() {
 
   useEffect(() => {
     let active = true;
+    let abortController = null;
 
     function fetchScope() {
-      fetch('/api/state/scope')
+      if (abortController) abortController.abort();
+      abortController = new AbortController();
+
+      fetch('/api/state/scope', { signal: abortController.signal })
         .then(r => {
           if (!r.ok) throw new Error(`Server returned ${r.status}`);
           return r.json();
@@ -42,13 +47,18 @@ export default function Scope() {
           }
         })
         .catch(err => {
+          if (err.name === 'AbortError') return;
           if (active) setError('Failed to load scope: ' + err.message);
         });
     }
 
     fetchScope();
     const poll = setInterval(fetchScope, 2000);
-    return () => { active = false; clearInterval(poll); };
+    return () => {
+      active = false;
+      clearInterval(poll);
+      if (abortController) abortController.abort();
+    };
   }, []);
 
   function toggleFile(path) {
@@ -164,7 +174,7 @@ export default function Scope() {
         <SectionLabel>audit · {audit?.repoUrl?.split('/').pop()?.replace('.git', '') || audit?.localPath?.split('/').pop() || 'scope'}</SectionLabel>
         <h1
           className="font-display text-text-primary mt-1"
-          style={{ fontSize: '28px', lineHeight: '1.15', fontWeight: 500 }}
+          style={pageHeadingStyle}
         >
           review scope
         </h1>

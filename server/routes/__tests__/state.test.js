@@ -108,7 +108,7 @@ describe('PUT /api/state/:file', () => {
   it('returns 413 for oversized body', async () => {
     const largeObj = { data: 'x'.repeat(600 * 1024) };
     const res = await request(app)
-      .put('/api/state/audit')
+      .put('/api/state/sanitize')
       .send(largeObj);
     expect(res.status).toBe(413);
   });

@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
-import { AnimatePresence, motion } from 'framer-motion';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import AppFrame from './components/AppFrame';
 import ErrorBoundary from './components/ErrorBoundary';
 import { ToastProvider } from './components/Toast';
@@ -9,29 +8,18 @@ import Scope from './pages/Scope';
 import Audit from './pages/Audit';
 import Findings from './pages/Findings';
 import Export from './pages/Export';
+import History from './pages/History';
 
-const pageTransition = {
-  initial: { opacity: 0, y: 8 },
-  animate: { opacity: 1, y: 0 },
-  exit: { opacity: 0, y: -8 },
-  transition: { duration: 0.25, ease: 'easeOut' },
-};
-
-function AnimatedRoutes({ appStatus, onStatusChange }) {
-  const location = useLocation();
-
+function AppRoutes({ onStatusChange }) {
   return (
-    <AnimatePresence mode="wait">
-      <motion.div key={location.pathname} {...pageTransition}>
-        <Routes location={location}>
-          <Route path="/" element={<ErrorBoundary><Setup /></ErrorBoundary>} />
-          <Route path="/scope" element={<ErrorBoundary><Scope /></ErrorBoundary>} />
-          <Route path="/audit" element={<ErrorBoundary><Audit onStatusChange={onStatusChange} /></ErrorBoundary>} />
-          <Route path="/findings" element={<ErrorBoundary><Findings onStatusChange={onStatusChange} /></ErrorBoundary>} />
-          <Route path="/export" element={<ErrorBoundary><Export /></ErrorBoundary>} />
-        </Routes>
-      </motion.div>
-    </AnimatePresence>
+    <Routes>
+      <Route path="/" element={<ErrorBoundary><Setup /></ErrorBoundary>} />
+      <Route path="/scope" element={<ErrorBoundary><Scope /></ErrorBoundary>} />
+      <Route path="/audit" element={<ErrorBoundary><Audit onStatusChange={onStatusChange} /></ErrorBoundary>} />
+      <Route path="/findings" element={<ErrorBoundary><Findings onStatusChange={onStatusChange} /></ErrorBoundary>} />
+      <Route path="/export" element={<ErrorBoundary><Export /></ErrorBoundary>} />
+      <Route path="/history" element={<ErrorBoundary><History /></ErrorBoundary>} />
+    </Routes>
   );
 }
 
@@ -69,7 +57,7 @@ export default function App() {
     <BrowserRouter>
       <ToastProvider>
         <AppFrame status={appStatus}>
-          <AnimatedRoutes appStatus={appStatus} onStatusChange={setAppStatus} />
+          <AppRoutes onStatusChange={setAppStatus} />
         </AppFrame>
       </ToastProvider>
     </BrowserRouter>

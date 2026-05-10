@@ -1,0 +1,19 @@
+id: anchor-v2-duplicate-mutable
+message: >-
+  Multiple mutable Account references in the same accounts struct.
+  If the same underlying account can be passed for two mutable parameters,
+  it creates aliasing that can lead to double-spend or state corruption.
+  Add constraints to ensure accounts are distinct.
+severity: warning
+language: rust
+rule:
+  pattern: |
+    #[account(mut$$$)]
+    pub $NAME1: Account<'$L1, $TYPE>,
+    $$$
+    #[account(mut$$$)]
+    pub $NAME2: Account<'$L2, $TYPE>,
+note: >-
+  When two mutable accounts have the same type, verify they cannot be
+  the same account. Use constraint = (a.key() != b.key()) or PDA seeds
+  to enforce distinctness.

@@ -1,6 +1,7 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const { getStateDir } = require('../lib/state-io');
 const router = express.Router();
 
 const ALLOWED_STATE_FILES = [
@@ -11,20 +12,6 @@ const ALLOWED_STATE_FILES = [
   'threat-model',
 ];
 
-const REPO_ROOT = path.resolve(__dirname, '..', '..');
-
-function getStateDir() {
-  return process.env.AUDIT_STATE_DIR || path.join(REPO_ROOT, 'state');
-}
-
-function ensureStateDir() {
-  const dir = getStateDir();
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-  return dir;
-}
-
 // GET /api/state/:file - read a state JSON file
 router.get('/:file', (req, res) => {
   const filename = req.params.file.replace(/[^a-zA-Z0-9_-]/g, '');
@@ -32,7 +19,7 @@ router.get('/:file', (req, res) => {
     return res.status(400).json({ error: `Unknown state file: ${filename}` });
   }
 
-  const stateDir = ensureStateDir();
+  const stateDir = getStateDir();
   const filepath = path.join(stateDir, `${filename}.json`);
 
   if (!fs.existsSync(filepath)) {
@@ -47,9 +34,40 @@ router.get('/:file', (req, res) => {
   }
 });
 
-// Files that the API can write — pipeline-managed files are read-only
+// Files that the API can write. Pipeline-managed files are read-only.
 const WRITABLE_FILES = ['audit', 'scope', 'sanitize'];
 const MAX_STATE_SIZE = 512 * 1024; // 512KB
+const MAX_STRING_FIELD_LENGTH = 10_000;
+
+// Lightweight schema validators for writable state files
+const STATE_SCHEMAS = {
+  audit: (body) => {
+    const allowed = ['repoUrl', 'localPath', 'mode', 'model', 'agentTimeoutMs', 'maxTokenBudget', 'scopeNotes', 'name'];
+    for (const key of Object.keys(body)) {
+      if (!allowed.includes(key)) return `Unknown field: ${key}`;
+      if (typeof body[key] === 'string' && body[key].length > MAX_STRING_FIELD_LENGTH) {
+        return `Field '${key}' exceeds max length`;
+      }
+    }
+    if (body.mode && !['local', 'git'].includes(body.mode)) return 'Invalid mode';
+    if (body.model && typeof body.model !== 'string') return 'model must be a string';
+    if (body.agentTimeoutMs !== undefined && (typeof body.agentTimeoutMs !== 'number' || body.agentTimeoutMs < 0)) {
+      return 'agentTimeoutMs must be a non-negative number';
+    }
+    if (body.maxTokenBudget !== undefined && (typeof body.maxTokenBudget !== 'number' || body.maxTokenBudget < 0)) {
+      return 'maxTokenBudget must be a non-negative number';
+    }
+    return null;
+  },
+  scope: (body) => {
+    if (body.files !== undefined && !Array.isArray(body.files)) return 'files must be an array';
+    if (body.excludedFiles !== undefined && !Array.isArray(body.excludedFiles)) return 'excludedFiles must be an array';
+    if (body.framework !== undefined && typeof body.framework !== 'string') return 'framework must be a string';
+    if (body.accepted !== undefined && typeof body.accepted !== 'boolean') return 'accepted must be a boolean';
+    return null;
+  },
+  sanitize: () => null,
+};
 
 // PUT /api/state/:file - write/update a state JSON file
 router.put('/:file', (req, res) => {
@@ -67,12 +85,19 @@ router.put('/:file', (req, res) => {
     return res.status(400).json({ error: 'Request body must be a JSON object' });
   }
 
+  // Schema validation for known writable files
+  const validator = STATE_SCHEMAS[filename];
+  if (validator) {
+    const error = validator(req.body);
+    if (error) return res.status(400).json({ error });
+  }
+
   const serialized = JSON.stringify(req.body, null, 2);
   if (serialized.length > MAX_STATE_SIZE) {
     return res.status(413).json({ error: `State file exceeds max size of ${MAX_STATE_SIZE} bytes` });
   }
 
-  const stateDir = ensureStateDir();
+  const stateDir = getStateDir();
   const filepath = path.join(stateDir, `${filename}.json`);
 
   try {

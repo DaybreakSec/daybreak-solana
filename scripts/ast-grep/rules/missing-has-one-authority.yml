@@ -1,0 +1,18 @@
+id: missing-has-one-authority
+message: >-
+  Account struct references a state account but does not constrain its
+  authority field with has_one. Without has_one, any account with the
+  correct type can be substituted.
+severity: warning
+language: rust
+rule:
+  pattern: "pub $NAME: Account<'$LIFETIME, $TYPE>"
+not:
+  inside:
+    has:
+      pattern: "has_one = $AUTHORITY"
+note: >-
+  When a state account has an authority/admin field, the accounts struct
+  should use #[account(has_one = authority)] to validate the authority
+  matches the stored value. Without this, an attacker can pass a state
+  account they control.

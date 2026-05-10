@@ -1,4 +1,4 @@
-# Dismissed Patterns — Solana / Anchor
+# Dismissed Patterns: Solana / Anchor
 
 Known false positive patterns. When a finding matches one of these patterns, it should be REFUTED unless the agent provides a specific explanation of why the standard defense is insufficient in this particular context.
 
@@ -41,7 +41,7 @@ Known false positive patterns. When a finding matches one of these patterns, it 
 
 ## 8. Transaction Atomicity
 **Pattern**: "Partial state update if instruction fails mid-execution"
-**Why it's a false positive**: Solana transactions are atomic — if an instruction returns an error, ALL state changes within that instruction are reverted.
+**Why it's a false positive**: Solana transactions are atomic; if an instruction returns an error, ALL state changes within that instruction are reverted.
 **When it IS a real finding**: When the error is CAUGHT within the instruction (e.g., match on CPI result) and execution continues with inconsistent state.
 
 ## 9. Anchor close Constraint
@@ -72,7 +72,7 @@ Known false positive patterns. When a finding matches one of these patterns, it 
 ## 14. remaining_accounts Iteration
 **Pattern**: "Unchecked accounts in remaining_accounts"
 **Why it's a false positive**: `remaining_accounts` is frequently used for variable-length lists (e.g., token accounts for batch operations). When the handler validates each account during iteration (checking owner, discriminator, or key against expected values), this is safe.
-**When it IS a real finding**: When `remaining_accounts` entries are used without any validation — particularly when used as writable or as CPI targets.
+**When it IS a real finding**: When `remaining_accounts` entries are used without any validation, particularly when used as writable or as CPI targets.
 
 ## 15. zero_copy Deserialization
 **Pattern**: "Account data not validated / unsafe deserialization"
@@ -86,7 +86,7 @@ Known false positive patterns. When a finding matches one of these patterns, it 
 
 ## 17. constraint = vs handler require!
 **Pattern**: "Validation only in constraint, not in handler" or vice versa
-**Why it's a false positive**: Anchor `constraint = expr` checks run before the handler body. Using either location is valid — the constraint approach is preferred as it fails early with clear errors.
+**Why it's a false positive**: Anchor `constraint = expr` checks run before the handler body. Using either location is valid; the constraint approach is preferred as it fails early with clear errors.
 **When it IS a real finding**: When the constraint references stale data (e.g., checks a field that gets modified by a CPI before the handler uses it), or when the constraint is bypassable through account ordering.
 
 ## 18. Pyth get_price_no_older_than Combined Check

@@ -2,6 +2,7 @@ import { NavLink } from 'react-router-dom';
 import SawatchFooter from './SawatchFooter';
 
 const navItems = [
+  { to: '/history', label: 'history' },
   { to: '/', label: 'setup', end: true },
   { to: '/scope', label: 'scope' },
   { to: '/audit', label: 'audit' },

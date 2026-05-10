@@ -1,0 +1,15 @@
+node_modules/
+client/dist/
+state/
+saved-audits/
+.git/
+.env
+.env.*
+*.log
+__pycache__/
+*.pyc
+research/
+target/
+Dockerfile
+docker-compose.yml
+.dockerignore

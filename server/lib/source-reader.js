@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { validatePath } = require('./path-validator');
+const { wrapSourceFile } = require('./sanitizer');
 
 const TOKEN_BUDGET = 150000; // leave room for system prompt + output
 
@@ -42,6 +43,7 @@ function readSourceFiles(rootDir, files, excludedFiles = [], priorityKeywords = 
 
   // Read file contents
   const fileData = [];
+  const excludedByError = [];
   for (const f of inScope) {
     const fullPath = validatePath(rootDir, f.path);
     try {
@@ -68,8 +70,8 @@ function readSourceFiles(rootDir, files, excludedFiles = [], priorityKeywords = 
         tokens,
         score,
       });
-    } catch {
-      // Skip unreadable files
+    } catch (err) {
+      excludedByError.push({ path: f.path, reason: err.code || err.message });
     }
   }
 
@@ -92,14 +94,17 @@ function readSourceFiles(rootDir, files, excludedFiles = [], priorityKeywords = 
   }
 
   if (excludedByBudget.length > 0) {
-    warning = `Large codebase — source truncated to fit context. ${excludedByBudget.length} file(s) excluded: ${excludedByBudget.join(', ')}`;
+    warning = `Large codebase, source truncated to fit context. ${excludedByBudget.length} file(s) excluded by budget.`;
+  }
+  if (excludedByError.length > 0) {
+    const errMsg = `${excludedByError.length} file(s) unreadable: ${excludedByError.map(e => e.path).join(', ')}`;
+    warning = warning ? `${warning} ${errMsg}` : errMsg;
   }
 
-  // Format output
+  // Format output with injection-resistant XML delimiters
   const parts = [];
   for (const f of included) {
-    const lang = detectLang(f.path);
-    parts.push(`### File: ${f.path} (${f.loc} LOC)\n\`\`\`${lang}\n${f.content}\n\`\`\``);
+    parts.push(wrapSourceFile(f.path, f.content, f.loc));
   }
 
   const totalLoc = included.reduce((sum, f) => sum + f.loc, 0);
@@ -111,6 +116,7 @@ function readSourceFiles(rootDir, files, excludedFiles = [], priorityKeywords = 
     warning,
     includedFiles: included.map(f => f.path),
     excludedByBudget,
+    excludedByError,
   };
 }
 

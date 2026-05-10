@@ -1,6 +1,6 @@
 /**
  * Rust-aware syntax highlighter for Solana audit code proofs.
- * Accepts raw Rust source — no pre-baked HTML needed.
+ * Accepts raw Rust source; no pre-baked HTML needed.
  *
  * Token colors (dawn palette):
  *   keyword    → dawn-magenta  #E85A8C

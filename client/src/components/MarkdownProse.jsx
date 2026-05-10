@@ -25,7 +25,7 @@ export default function MarkdownProse({ text, className, style }) {
             </div>
           );
         }
-        // Prose block — render with structure
+        // Prose block: render with structure
         return <ProseBlock key={i} content={block.content} />;
       })}
     </div>
@@ -212,6 +212,10 @@ function renderInline(text) {
       return <em key={i} style={{ fontStyle: 'italic' }}>{tok.content}</em>;
     }
     if (tok.type === 'link') {
+      const isSafeUrl = /^https?:\/\//i.test(tok.url);
+      if (!isSafeUrl) {
+        return <span key={i}>{tok.content}</span>;
+      }
       return (
         <a
           key={i}
@@ -224,7 +228,7 @@ function renderInline(text) {
         </a>
       );
     }
-    // Plain text — handle newlines
+    // Plain text: handle newlines
     const lines = tok.content.split('\n');
     const parts = [];
     for (let j = 0; j < lines.length; j++) {

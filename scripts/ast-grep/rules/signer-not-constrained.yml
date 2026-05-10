@@ -1,0 +1,16 @@
+id: signer-not-constrained
+message: >-
+  Authority/admin/owner account uses AccountInfo without Signer type.
+  If this account authorizes privileged operations, it must be validated
+  as a signer via Signer<'info> or a manual is_signer check.
+severity: warning
+language: rust
+rule:
+  any:
+    - pattern: "pub $NAME: AccountInfo<'$LIFETIME>"
+constraints:
+  NAME:
+    regex: "(?i)authority|admin|owner|operator|manager"
+note: >-
+  In Anchor, use Signer<'info> for accounts that must sign.
+  Raw AccountInfo does not enforce signer validation.

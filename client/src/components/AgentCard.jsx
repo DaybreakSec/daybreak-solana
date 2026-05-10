@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import SectionLabel from './SectionLabel';
 import { formatDuration, formatTokens, formatCost } from '../utils/format';
@@ -22,6 +23,16 @@ const severityDotColors = {
 };
 
 const SEVERITY_ORDER = ['critical', 'high', 'medium', 'low', 'info', 'informational'];
+
+const BASE_CARD_STYLE = {
+  borderRadius: 'var(--radius-xl)',
+  padding: '14px 16px',
+  minHeight: '138px',
+  gap: '10px',
+  transition: 'border-color 200ms ease, transform 200ms ease',
+};
+const CARD_BORDER_ACTIVE = '0.5px solid rgba(232, 90, 140, 0.35)';
+const CARD_BORDER_IDLE = '0.5px solid var(--color-border-subtle)';
 
 function normalizeStatus(s) {
   if (!s) return 'queued';
@@ -57,6 +68,24 @@ function buildSeveritySummary(findings) {
   return { tally: parts.join(' '), dots };
 }
 
+/** Local elapsed timer — only ticks when the agent is actively scanning. */
+function useElapsedTimer(startedAt, isActive) {
+  const [elapsed, setElapsed] = useState(() =>
+    startedAt ? Date.now() - new Date(startedAt).getTime() : 0
+  );
+
+  useEffect(() => {
+    if (!isActive || !startedAt) return;
+    setElapsed(Date.now() - new Date(startedAt).getTime());
+    const interval = setInterval(() => {
+      setElapsed(Date.now() - new Date(startedAt).getTime());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [isActive, startedAt]);
+
+  return elapsed;
+}
+
 export default function AgentCard({
   agent,
   agentKey,
@@ -70,11 +99,13 @@ export default function AgentCard({
   const isActive = status === 'scanning' || status === 'running';
   const isComplete = status === 'complete' || status === 'completed';
 
+  const elapsed = useElapsedTimer(agent.startedAt, isActive);
+
   const statusLabel = isActive ? 'scanning' : isComplete ? 'complete' : status;
   const statusColor = statusColors[status] || statusColors.queued;
 
   const metaText = isActive
-    ? (agent.currentFile || 'analyzing...')
+    ? (agent.currentFile || `scanning (${formatDuration(elapsed)})`)
     : isComplete
       ? formatDuration(agent.durationMs)
       : status === 'queued'
@@ -209,14 +240,8 @@ export default function AgentCard({
   );
 
   const sharedStyle = {
-    border: isActive
-      ? '0.5px solid rgba(232, 90, 140, 0.35)'
-      : '0.5px solid var(--color-border-subtle)',
-    borderRadius: 'var(--radius-xl)',
-    padding: '14px 16px',
-    minHeight: '138px',
-    gap: '10px',
-    transition: 'border-color 200ms ease, transform 200ms ease',
+    ...BASE_CARD_STYLE,
+    border: isActive ? CARD_BORDER_ACTIVE : CARD_BORDER_IDLE,
   };
 
   if (isComplete && agentKey) {

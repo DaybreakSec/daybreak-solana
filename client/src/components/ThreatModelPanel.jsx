@@ -16,6 +16,18 @@ const TRUST_COLORS = {
   trusted: 'var(--color-sev-low)',
 };
 
+const IMPORTANCE_COLORS = {
+  critical: 'var(--color-sev-critical)',
+  high: 'var(--color-sev-high)',
+  medium: 'var(--color-sev-medium)',
+};
+
+const RELEVANCE_COLORS = {
+  high: 'var(--color-dawn-coral)',
+  medium: 'var(--color-dawn-amber)',
+  low: 'var(--color-text-tertiary)',
+};
+
 export default function ThreatModelPanel({ data, status, onDownload }) {
   const [expanded, setExpanded] = useState(true);
 
@@ -109,6 +121,13 @@ export default function ThreatModelPanel({ data, status, onDownload }) {
             </Section>
           )}
 
+          {/* Invariants */}
+          {data.invariants && data.invariants.length > 0 && (
+            <Section title="invariants">
+              <InvariantList invariants={data.invariants} />
+            </Section>
+          )}
+
           {/* Attack Surfaces */}
           {data.attackSurfaces && data.attackSurfaces.length > 0 && (
             <Section title="attack surfaces">
@@ -123,48 +142,7 @@ export default function ThreatModelPanel({ data, status, onDownload }) {
           {/* Threat Categories */}
           {data.threatCategories && data.threatCategories.length > 0 && (
             <Section title="threat categories">
-              <ThreatCategoryAccordion categories={data.threatCategories} />
-            </Section>
-          )}
-
-          {/* Key Risks */}
-          {data.keyRisks && data.keyRisks.length > 0 && (
-            <Section title="key risks">
-              <ul style={{ margin: 0, paddingLeft: '18px' }}>
-                {data.keyRisks.map((r, i) => (
-                  <li
-                    key={i}
-                    className="text-text-secondary"
-                    style={{ fontSize: '14px', lineHeight: '1.6', marginBottom: '4px' }}
-                  >
-                    {r}
-                  </li>
-                ))}
-              </ul>
-            </Section>
-          )}
-
-          {/* Recommended Focus */}
-          {data.recommendedFocus && data.recommendedFocus.length > 0 && (
-            <Section title="recommended focus">
-              <ul style={{ margin: 0, paddingLeft: '18px' }}>
-                {data.recommendedFocus.map((f, i) => (
-                  <li
-                    key={i}
-                    className="text-text-secondary"
-                    style={{ fontSize: '14px', lineHeight: '1.6', marginBottom: '4px' }}
-                  >
-                    {f}
-                  </li>
-                ))}
-              </ul>
-            </Section>
-          )}
-
-          {/* Attack Narratives */}
-          {data.attackNarratives && data.attackNarratives.length > 0 && (
-            <Section title="attack narratives">
-              <AttackNarrativeCards narratives={data.attackNarratives} />
+              <ThreatCategoryCards categories={data.threatCategories} />
             </Section>
           )}
 
@@ -293,6 +271,59 @@ function TrustBoundaryList({ boundaries }) {
   );
 }
 
+function InvariantList({ invariants }) {
+  // Group by type
+  const grouped = {};
+  for (const inv of invariants) {
+    if (!grouped[inv.type]) grouped[inv.type] = [];
+    grouped[inv.type].push(inv);
+  }
+
+  const TYPE_LABELS = { funds: 'fund conservation', access: 'access separation', state: 'state consistency' };
+  const typeOrder = ['funds', 'access', 'state'];
+
+  return (
+    <div className="space-y-3">
+      {typeOrder.filter(t => grouped[t]).map(type => (
+        <div key={type}>
+          <div
+            className="font-mono text-text-tertiary"
+            style={{ fontSize: '12px', marginBottom: '6px', fontWeight: 500, letterSpacing: '0.05em' }}
+          >
+            {TYPE_LABELS[type] || type}
+          </div>
+          <div className="space-y-1.5">
+            {grouped[type].map((inv) => (
+              <div
+                key={inv.id}
+                className="flex items-start gap-2"
+                style={{
+                  padding: '6px 10px',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'var(--color-bg-recessed)',
+                }}
+              >
+                <span
+                  className="inline-block w-2 h-2 rounded-full mt-1.5 flex-shrink-0"
+                  style={{ background: IMPORTANCE_COLORS[inv.importance] || 'var(--color-text-tertiary)' }}
+                />
+                <div className="flex-1 min-w-0">
+                  <span className="font-mono text-text-primary" style={{ fontSize: '13px' }}>
+                    {inv.property}
+                  </span>
+                  <div className="font-mono text-text-tertiary" style={{ fontSize: '12px', marginTop: '2px' }}>
+                    {inv.id} &middot; {inv.scope}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function AttackSurfaceCards({ surfaces }) {
   return (
     <div className="space-y-3">
@@ -315,23 +346,35 @@ function AttackSurfaceCards({ surfaces }) {
               {as.name}
             </span>
           </div>
+          <div
+            className="font-mono text-text-secondary"
+            style={{ fontSize: '13px', lineHeight: '1.5', marginBottom: '6px' }}
+          >
+            {as.description}
+          </div>
           {as.instructions && as.instructions.length > 0 && (
-            <div className="font-mono text-text-tertiary" style={{ fontSize: '13px', marginBottom: '4px' }}>
+            <div className="font-mono text-text-tertiary" style={{ fontSize: '12px', marginBottom: '4px' }}>
               {as.instructions.join(', ')}
             </div>
           )}
-          {as.attackVectors && as.attackVectors.length > 0 && (
-            <ul style={{ margin: 0, paddingLeft: '16px' }}>
-              {as.attackVectors.map((v, j) => (
-                <li
+          {as.exposureFactors && as.exposureFactors.length > 0 && (
+            <div className="flex flex-wrap gap-1.5" style={{ marginTop: '6px' }}>
+              {as.exposureFactors.map((factor, j) => (
+                <span
                   key={j}
-                  className="text-text-secondary"
-                  style={{ fontSize: '13px', lineHeight: '1.5' }}
+                  className="font-mono text-text-tertiary"
+                  style={{
+                    fontSize: '12px',
+                    padding: '2px 8px',
+                    borderRadius: 'var(--radius-sm)',
+                    border: '0.5px solid var(--color-border-subtle)',
+                    background: 'var(--color-bg-elevated)',
+                  }}
                 >
-                  {v}
-                </li>
+                  {factor}
+                </span>
               ))}
-            </ul>
+            </div>
           )}
         </div>
       ))}
@@ -339,152 +382,46 @@ function AttackSurfaceCards({ surfaces }) {
   );
 }
 
-function ThreatCategoryAccordion({ categories }) {
-  const [openCats, setOpenCats] = useState({});
-
-  function toggle(cat) {
-    setOpenCats(prev => ({ ...prev, [cat]: !prev[cat] }));
-  }
-
-  return (
-    <div className="space-y-1">
-      {categories.map((cat) => {
-        const label = cat.category.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-        const threatCount = (cat.threats || []).length;
-        const isOpen = openCats[cat.category];
-
-        return (
-          <div key={cat.category}>
-            <button
-              type="button"
-              className="flex items-center gap-2 w-full font-mono text-text-secondary cursor-pointer"
-              style={{ fontSize: '13px', padding: '6px 0' }}
-              onClick={() => toggle(cat.category)}
-            >
-              <span style={{
-                display: 'inline-block',
-                transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)',
-                transition: 'transform 150ms',
-              }}>
-                &rsaquo;
-              </span>
-              {label}
-              <span className="text-text-tertiary">({threatCount} threats)</span>
-            </button>
-            {isOpen && cat.threats && (
-              <div style={{ paddingLeft: '16px', paddingBottom: '8px' }}>
-                {cat.threats.map((t) => (
-                  <div
-                    key={t.id}
-                    style={{
-                      padding: '8px 0',
-                      borderBottom: '0.5px solid var(--color-border-subtle)',
-                    }}
-                  >
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="font-mono text-text-tertiary" style={{ fontSize: '12px' }}>
-                        {t.id}
-                      </span>
-                      <span className="font-mono text-text-primary" style={{ fontSize: '13px' }}>
-                        {t.title}
-                      </span>
-                    </div>
-                    <div className="font-mono text-text-secondary" style={{ fontSize: '13px', lineHeight: '1.5' }}>
-                      {t.description}
-                    </div>
-                    <div className="flex gap-3 mt-1">
-                      <span className="font-mono" style={{ fontSize: '12px', color: RISK_COLORS[t.impact] }}>
-                        impact: {t.impact}
-                      </span>
-                      <span className="font-mono text-text-tertiary" style={{ fontSize: '12px' }}>
-                        likelihood: {t.likelihood}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
+function ThreatCategoryCards({ categories }) {
+  // Sort by relevance: high first
+  const sorted = [...categories].sort(
+    (a, b) => relevanceRank(a.relevance) - relevanceRank(b.relevance)
   );
-}
-
-function AttackNarrativeCards({ narratives }) {
-  const [openNarr, setOpenNarr] = useState({});
-
-  function toggle(idx) {
-    setOpenNarr(prev => ({ ...prev, [idx]: !prev[idx] }));
-  }
 
   return (
-    <div className="space-y-1">
-      {narratives.map((an, i) => {
-        const isOpen = openNarr[i];
+    <div className="space-y-2">
+      {sorted.map((cat) => {
+        const label = cat.category.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        const ixCount = (cat.affectedInstructions || []).length;
 
         return (
-          <div key={i}>
-            <button
-              type="button"
-              className="flex items-center gap-2 w-full font-mono text-text-secondary cursor-pointer"
-              style={{ fontSize: '13px', padding: '6px 0' }}
-              onClick={() => toggle(i)}
-            >
-              <span style={{
-                display: 'inline-block',
-                transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)',
-                transition: 'transform 150ms',
-              }}>
-                &rsaquo;
-              </span>
-              <span className="text-text-primary">{an.title}</span>
+          <div
+            key={cat.category}
+            style={{
+              padding: '10px 12px',
+              borderRadius: 'var(--radius-md)',
+              border: '0.5px solid var(--color-border-subtle)',
+              background: 'var(--color-bg-recessed)',
+            }}
+          >
+            <div className="flex items-center gap-2 mb-1">
               <span
-                className="font-mono"
-                style={{
-                  fontSize: '12px',
-                  color: RISK_COLORS[an.estimatedSeverity] || 'var(--color-text-tertiary)',
-                }}
-              >
-                [{an.estimatedSeverity}]
+                className="inline-block w-2 h-2 rounded-full flex-shrink-0"
+                style={{ background: RELEVANCE_COLORS[cat.relevance] || 'var(--color-text-tertiary)' }}
+              />
+              <span className="font-mono text-text-primary" style={{ fontSize: '13px', fontWeight: 500 }}>
+                {label}
               </span>
-            </button>
-            {isOpen && (
-              <div
-                style={{
-                  paddingLeft: '16px',
-                  paddingBottom: '12px',
-                }}
-              >
-                <div
-                  className="text-text-secondary"
-                  style={{ fontSize: '14px', lineHeight: '1.6', marginBottom: '8px' }}
-                >
-                  {an.narrative}
-                </div>
-                {an.preconditions && an.preconditions.length > 0 && (
-                  <div>
-                    <span
-                      className="font-mono text-text-tertiary"
-                      style={{ fontSize: '12px', fontWeight: 500 }}
-                    >
-                      preconditions:
-                    </span>
-                    <ul style={{ margin: '4px 0 0', paddingLeft: '16px' }}>
-                      {an.preconditions.map((p, j) => (
-                        <li
-                          key={j}
-                          className="text-text-tertiary"
-                          style={{ fontSize: '13px', lineHeight: '1.5' }}
-                        >
-                          {p}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            )}
+              <span className="font-mono text-text-tertiary" style={{ fontSize: '12px' }}>
+                {cat.relevance} &middot; {ixCount} ix
+              </span>
+            </div>
+            <div
+              className="font-mono text-text-secondary"
+              style={{ fontSize: '13px', lineHeight: '1.5' }}
+            >
+              {cat.summary}
+            </div>
           </div>
         );
       })}
@@ -495,4 +432,9 @@ function AttackNarrativeCards({ narratives }) {
 function severityRank(level) {
   const ranks = { critical: 0, high: 1, medium: 2, low: 3 };
   return ranks[level] ?? 4;
+}
+
+function relevanceRank(level) {
+  const ranks = { high: 0, medium: 1, low: 2 };
+  return ranks[level] ?? 3;
 }

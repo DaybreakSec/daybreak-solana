@@ -66,6 +66,7 @@ ORACLES_FILE="$OUTPUT_DIR/oracles.json"
 STATE_MACHINES_FILE="$OUTPUT_DIR/state-machines.json"
 CLOSE_PATTERNS_FILE="$OUTPUT_DIR/close-patterns.json"
 VALUE_FLOWS_FILE="$OUTPUT_DIR/value-flows.json"
+AUTH_PATTERNS_FILE="$OUTPUT_DIR/auth-patterns.json"
 
 # Initialize with empty arrays
 echo '[]' > "$AST_GREP_FILE"
@@ -80,6 +81,7 @@ echo '[]' > "$ORACLES_FILE"
 echo '[]' > "$STATE_MACHINES_FILE"
 echo '[]' > "$CLOSE_PATTERNS_FILE"
 echo '[]' > "$VALUE_FLOWS_FILE"
+echo '[]' > "$AUTH_PATTERNS_FILE"
 
 # ---------------------------------------------------------------------------
 # 1. ast-grep analysis
@@ -248,6 +250,7 @@ run_tree_sitter() {
         "extract-state-machines.py:$STATE_MACHINES_FILE:state-machines"
         "extract-close-patterns.py:$CLOSE_PATTERNS_FILE:close-patterns"
         "extract-value-flows.py:$VALUE_FLOWS_FILE:value-flows"
+        "extract-auth-patterns.py:$AUTH_PATTERNS_FILE:auth-patterns"
     )
 
     for entry in "${extractors[@]}"; do

@@ -12,7 +12,7 @@ function validatePath(rootDir, filePath) {
   try {
     realResolved = fs.realpathSync(resolved);
   } catch {
-    // File may not exist yet — check the resolved path prefix
+    // File may not exist yet - check the resolved path prefix
     realResolved = resolved;
   }
   if (!realResolved.startsWith(realRoot + path.sep) && realResolved !== realRoot) {

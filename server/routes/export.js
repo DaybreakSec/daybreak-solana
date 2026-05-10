@@ -3,18 +3,8 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const { isValidFindingId } = require('../lib/path-validator');
+const { readFindings, getStateDir } = require('../lib/state-io');
 const router = express.Router();
-
-const REPO_ROOT = path.resolve(__dirname, '..', '..');
-
-function readFindings() {
-  const stateDir = process.env.AUDIT_STATE_DIR || path.join(REPO_ROOT, 'state');
-  const filepath = path.join(stateDir, 'findings.json');
-  if (!fs.existsSync(filepath)) {
-    return { findings: [] };
-  }
-  return JSON.parse(fs.readFileSync(filepath, 'utf8'));
-}
 
 function severityLabel(s) {
   const labels = { critical: 'Critical', high: 'High', medium: 'Medium', low: 'Low', informational: 'Info' };
@@ -96,7 +86,7 @@ router.post('/github-issues', (req, res) => {
 // POST /api/export/threat-model - export threat model as markdown
 router.post('/threat-model', (req, res) => {
   try {
-    const stateDir = process.env.AUDIT_STATE_DIR || path.join(REPO_ROOT, 'state');
+    const stateDir = getStateDir();
     const tmPath = path.join(stateDir, 'threat-model.json');
 
     if (!fs.existsSync(tmPath)) {
@@ -128,7 +118,7 @@ router.post('/report', (req, res) => {
       : data.findings.filter(f => f.status === 'valid');
 
     // Read audit metadata
-    const stateDir = process.env.AUDIT_STATE_DIR || path.join(process.cwd(), 'state');
+    const stateDir = getStateDir();
     let audit = {};
     const auditPath = path.join(stateDir, 'audit.json');
     if (fs.existsSync(auditPath)) {
@@ -298,6 +288,28 @@ function renderThreatModelMarkdown(tm) {
     }
   }
 
+  // Invariants
+  if (tm.invariants && tm.invariants.length > 0) {
+    lines.push('## Invariants');
+    lines.push('');
+    const TYPE_LABELS = { funds: 'Fund Conservation', access: 'Access Separation', state: 'State Consistency' };
+    const grouped = {};
+    for (const inv of tm.invariants) {
+      if (!grouped[inv.type]) grouped[inv.type] = [];
+      grouped[inv.type].push(inv);
+    }
+    for (const type of ['funds', 'access', 'state']) {
+      if (!grouped[type]) continue;
+      lines.push(`### ${TYPE_LABELS[type] || type}`);
+      lines.push('');
+      for (const inv of grouped[type]) {
+        lines.push(`- **${inv.id}** [${inv.importance}]: ${inv.property}`);
+        lines.push(`  - Scope: ${inv.scope}`);
+      }
+      lines.push('');
+    }
+  }
+
   // Attack Surfaces
   if (tm.attackSurfaces && tm.attackSurfaces.length > 0) {
     lines.push('## Attack Surfaces');
@@ -310,11 +322,11 @@ function renderThreatModelMarkdown(tm) {
       if (as.instructions && as.instructions.length > 0) {
         lines.push(`**Instructions**: ${as.instructions.join(', ')}`);
       }
-      if (as.attackVectors && as.attackVectors.length > 0) {
+      if (as.exposureFactors && as.exposureFactors.length > 0) {
         lines.push('');
-        lines.push('**Attack Vectors**:');
-        for (const v of as.attackVectors) {
-          lines.push(`- ${v}`);
+        lines.push('**Exposure factors**:');
+        for (const f of as.exposureFactors) {
+          lines.push(`- ${f}`);
         }
       }
       lines.push('');
@@ -323,83 +335,16 @@ function renderThreatModelMarkdown(tm) {
 
   // Threat Categories
   if (tm.threatCategories && tm.threatCategories.length > 0) {
-    lines.push('## Threat Analysis');
+    lines.push('## Threat Categories');
     lines.push('');
     for (const cat of tm.threatCategories) {
       const label = cat.category.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-      lines.push(`### ${label}`);
+      lines.push(`### ${label} (${cat.relevance} relevance)`);
       lines.push('');
-      if (cat.threats && cat.threats.length > 0) {
-        lines.push('| ID | Threat | Likelihood | Impact | Instructions |');
-        lines.push('|----|--------|-----------|--------|--------------|');
-        for (const t of cat.threats) {
-          const ixList = (t.affectedInstructions || []).join(', ');
-          lines.push(`| ${t.id} | ${t.title} | ${t.likelihood} | ${t.impact} | ${ixList} |`);
-        }
-        lines.push('');
-        for (const t of cat.threats) {
-          lines.push(`**${t.id}: ${t.title}** - ${t.description}`);
-          lines.push('');
-        }
-      }
-    }
-  }
-
-  // Invariant Analysis
-  if (tm.invariantThreats && tm.invariantThreats.length > 0) {
-    lines.push('## Invariant Analysis');
-    lines.push('');
-    for (const inv of tm.invariantThreats) {
-      lines.push(`### ${inv.invariant} (${inv.type})`);
+      lines.push(cat.summary);
       lines.push('');
-      if (inv.threatenedBy && inv.threatenedBy.length > 0) {
-        lines.push(`**Threatened by**: ${inv.threatenedBy.join(', ')}`);
-      }
-      if (inv.potentialViolations && inv.potentialViolations.length > 0) {
-        lines.push('');
-        lines.push('**Potential violations**:');
-        for (const v of inv.potentialViolations) {
-          lines.push(`- ${v}`);
-        }
-      }
-      lines.push('');
-    }
-  }
-
-  // Key Risks
-  if (tm.keyRisks && tm.keyRisks.length > 0) {
-    lines.push('## Key Risks');
-    lines.push('');
-    for (const r of tm.keyRisks) {
-      lines.push(`- ${r}`);
-    }
-    lines.push('');
-  }
-
-  // Recommended Focus
-  if (tm.recommendedFocus && tm.recommendedFocus.length > 0) {
-    lines.push('## Recommended Focus Areas');
-    lines.push('');
-    for (const f of tm.recommendedFocus) {
-      lines.push(`- ${f}`);
-    }
-    lines.push('');
-  }
-
-  // Attack Narratives
-  if (tm.attackNarratives && tm.attackNarratives.length > 0) {
-    lines.push('## Attack Narratives');
-    lines.push('');
-    for (const an of tm.attackNarratives) {
-      lines.push(`### ${an.title} (${an.estimatedSeverity})`);
-      lines.push('');
-      lines.push(an.narrative);
-      lines.push('');
-      if (an.preconditions && an.preconditions.length > 0) {
-        lines.push('**Preconditions**:');
-        for (const p of an.preconditions) {
-          lines.push(`- ${p}`);
-        }
+      if (cat.affectedInstructions && cat.affectedInstructions.length > 0) {
+        lines.push(`**Affected instructions**: ${cat.affectedInstructions.join(', ')}`);
         lines.push('');
       }
     }

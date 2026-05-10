@@ -1,0 +1,19 @@
+id: reward-debt-gap
+message: >-
+  Reward-per-share/token calculation detected. Ensure that reward_debt
+  (or equivalent user-level accumulator offset) is updated whenever a
+  user's staked balance changes. Missing reward_debt updates cause
+  retroactive reward claims.
+severity: warning
+language: rust
+rule:
+  any:
+    - pattern: "$X.reward_per_share"
+    - pattern: "$X.reward_per_token"
+    - pattern: "$X.accumulated_reward_per_share"
+    - pattern: "$X.acc_reward_per_share"
+note: >-
+  In reward distribution systems using the "reward debt" pattern,
+  user.reward_debt must be set to user.staked * pool.reward_per_share
+  whenever the user stakes, unstakes, or claims. Without this update,
+  users earn rewards retroactively on their full balance from time zero.

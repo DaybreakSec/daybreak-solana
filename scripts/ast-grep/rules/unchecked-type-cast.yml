@@ -1,0 +1,18 @@
+id: unchecked-type-cast
+message: >-
+  Unchecked 'as' type cast detected. The 'as' keyword silently truncates
+  values that exceed the target type's range. Use try_from() or try_into()
+  with proper error handling instead.
+severity: warning
+language: rust
+rule:
+  any:
+    - pattern: "$EXPR as u64"
+    - pattern: "$EXPR as u32"
+    - pattern: "$EXPR as u16"
+    - pattern: "$EXPR as u8"
+note: >-
+  In Rust, 'as' casts silently wrap/truncate on overflow. For financial
+  calculations, use u64::try_from(value).map_err(|_| ErrorCode::Overflow)
+  to catch truncation. This is especially critical for u128 -> u64 casts
+  in price/share calculations.

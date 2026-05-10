@@ -8,10 +8,9 @@ function withLock(fn) {
   const prev = writeLock;
   let release;
   writeLock = new Promise(resolve => { release = resolve; });
-  const timeout = new Promise(resolve => {
+  const timeout = new Promise((_, reject) => {
     setTimeout(() => {
-      console.warn('state-io: lock held longer than 10s — force-proceeding');
-      resolve();
+      reject(new Error('state-io: lock held longer than 10s — refusing to proceed to prevent data corruption'));
     }, LOCK_TIMEOUT_MS);
   });
   return Promise.race([prev, timeout]).then(() => fn()).finally(release);

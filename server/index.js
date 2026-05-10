@@ -8,6 +8,7 @@ const findingsRoutes = require('./routes/findings');
 const exportRoutes = require('./routes/export');
 const scanRoutes = require('./routes/scan');
 const eventsRoutes = require('./routes/events');
+const auditsRoutes = require('./routes/audits');
 const { recoverFromCrash, cleanup } = require('./lib/agent-runner');
 
 const app = express();
@@ -36,12 +37,13 @@ app.use(cors({
   },
 }));
 
-// Rate limiting — generous for polling endpoints, tight for mutations
+// Rate limiting - generous for polling endpoints, tight for mutations
 const generalLimiter = rateLimit({
   windowMs: 60_000,
-  max: 300,
+  max: 600,
   standardHeaders: true,
   legacyHeaders: false,
+  message: { error: 'Too many requests, please try again later' },
 });
 app.use('/api', generalLimiter);
 
@@ -59,6 +61,7 @@ app.use(express.json({ limit: '2mb' }));
 app.use('/api/state', stateRoutes);
 app.use('/api/findings', findingsRoutes);
 app.use('/api/export', exportRoutes);
+app.use('/api/audits', auditsRoutes);
 app.use('/api/scan/events', eventsRoutes);
 app.use('/api/scan', scanRoutes);
 
@@ -74,7 +77,7 @@ recoverFromCrash();
 
 // Graceful shutdown: kill child processes
 process.on('SIGINT', () => {
-  console.log('\nShutting down — cleaning up agent processes...');
+  console.log('\nShutting down, cleaning up agent processes...');
   cleanup();
   process.exit(0);
 });

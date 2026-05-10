@@ -44,6 +44,21 @@ describe('validatePath', () => {
   it('throws on path that resolves outside root', () => {
     expect(() => validatePath(tmpDir, 'sub/../../outside')).toThrow('Path escapes root directory');
   });
+
+  it('returns resolved path for non-existent file within root', () => {
+    const result = validatePath(tmpDir, 'does-not-exist.txt');
+    expect(result).toBe(path.join(tmpDir, 'does-not-exist.txt'));
+  });
+
+  it('returns root path when input is "."', () => {
+    const result = validatePath(tmpDir, '.');
+    expect(result).toBe(fs.realpathSync(tmpDir));
+  });
+
+  it('handles path with trailing separator correctly', () => {
+    const result = validatePath(tmpDir, 'sub/');
+    expect(result).toBe(path.join(tmpDir, 'sub'));
+  });
 });
 
 describe('isValidGitUrl', () => {
@@ -114,6 +129,34 @@ describe('isValidGitUrl', () => {
   it('rejects number input', () => {
     expect(isValidGitUrl(42)).toBe(false);
   });
+
+  it('rejects empty string', () => {
+    expect(isValidGitUrl('')).toBe(false);
+  });
+
+  it('rejects whitespace string', () => {
+    expect(isValidGitUrl('   ')).toBe(false);
+  });
+
+  it('rejects typosquatting domain: githubx.com', () => {
+    expect(isValidGitUrl('https://githubx.com/user/repo')).toBe(false);
+  });
+
+  it('rejects URL without path: https://github.com', () => {
+    expect(isValidGitUrl('https://github.com')).toBe(false);
+  });
+
+  it('rejects newline in URL', () => {
+    expect(isValidGitUrl('https://github.com/user/repo\nmalicious')).toBe(false);
+  });
+
+  it('rejects exclamation mark in URL', () => {
+    expect(isValidGitUrl('https://github.com/user/repo!')).toBe(false);
+  });
+
+  it('rejects curly braces in URL', () => {
+    expect(isValidGitUrl('https://github.com/user/{repo}')).toBe(false);
+  });
 });
 
 describe('isValidFindingId', () => {
@@ -159,5 +202,33 @@ describe('isValidFindingId', () => {
 
   it('rejects number input', () => {
     expect(isValidFindingId(123)).toBe(false);
+  });
+
+  it('rejects empty string', () => {
+    expect(isValidFindingId('')).toBe(false);
+  });
+
+  it('accepts single letter prefix: a-b-001', () => {
+    expect(isValidFindingId('a-b-001')).toBe(true);
+  });
+
+  it('rejects hyphen at start: -foo-001', () => {
+    expect(isValidFindingId('-foo-001')).toBe(false);
+  });
+
+  it('rejects numbers in name segment: foo2-bar-001', () => {
+    expect(isValidFindingId('foo2-bar-001')).toBe(false);
+  });
+
+  it('rejects leading/trailing spaces', () => {
+    expect(isValidFindingId(' foo-bar-001 ')).toBe(false);
+  });
+
+  it('rejects digits in first position: 0abc-001', () => {
+    expect(isValidFindingId('0abc-001')).toBe(false);
+  });
+
+  it('allows multiple consecutive hyphens: foo--bar-001', () => {
+    expect(isValidFindingId('foo--bar-001')).toBe(true);
   });
 });

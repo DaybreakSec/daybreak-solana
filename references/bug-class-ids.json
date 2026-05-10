@@ -14,6 +14,9 @@
     "permissionless-init-frontrun":    { "domain": 1, "ref": "1.11", "agent": "accounts-access" },
     "admin-key-rotation-no-two-step":  { "domain": 1, "ref": "1.12", "agent": "accounts-access" },
     "duplicate-mutable-account":       { "domain": 1, "ref": "1.13", "agent": "accounts-access" },
+    "missing-authority-constraint":    { "domain": 1, "ref": "1.14", "agent": "accounts-access" },
+    "cross-vault-account-confusion":   { "domain": 1, "ref": "1.15", "agent": "accounts-access" },
+    "merkle-root-no-invalidation":     { "domain": 1, "ref": "1.16", "agent": "accounts-access" },
 
     "unverified-cpi-program-id":       { "domain": 2, "ref": "2.1",  "agent": "cpi-token" },
     "stale-data-after-cpi":            { "domain": 2, "ref": "2.2",  "agent": "cpi-token" },
@@ -27,6 +30,7 @@
     "legacy-transfer-token-2022":      { "domain": 2, "ref": "2.10", "agent": "cpi-token" },
     "missing-transfer-checked":        { "domain": 2, "ref": "2.11", "agent": "cpi-token" },
     "ata-derivation-error":            { "domain": 2, "ref": "2.12", "agent": "cpi-token" },
+    "transfer-hook-whitelist-bypass":  { "domain": 2, "ref": "2.14", "agent": "cpi-token" },
 
     "unchecked-arithmetic":            { "domain": 3, "ref": "3.1",  "agent": "arithmetic-economic" },
     "division-before-multiplication":  { "domain": 3, "ref": "3.2",  "agent": "arithmetic-economic" },
@@ -40,6 +44,13 @@
     "bonding-curve-discontinuity":     { "domain": 3, "ref": "3.10", "agent": "arithmetic-economic" },
     "fee-ordering-error":              { "domain": 3, "ref": "3.11", "agent": "arithmetic-economic" },
     "dead-share-price":                { "domain": 3, "ref": "3.12", "agent": "arithmetic-economic" },
+    "reward-debt-desync":              { "domain": 3, "ref": "3.14", "agent": "arithmetic-economic" },
+    "oracle-disabled-bypass":          { "domain": 3, "ref": "3.15", "agent": "arithmetic-economic" },
+    "volatility-fee-manipulation":     { "domain": 3, "ref": "3.16", "agent": "arithmetic-economic" },
+    "multi-bin-reward-skip":           { "domain": 3, "ref": "3.17", "agent": "arithmetic-economic" },
+    "profit-unlock-griefing":          { "domain": 3, "ref": "3.18", "agent": "arithmetic-economic" },
+    "liquidation-dust-position":       { "domain": 3, "ref": "3.19", "agent": "arithmetic-economic" },
+    "aum-component-mismatch":          { "domain": 3, "ref": "3.20", "agent": "arithmetic-economic" },
 
     "invalid-state-transition":        { "domain": 4, "ref": "4.1",  "agent": "state-lifecycle" },
     "terminal-state-not-absorbing":    { "domain": 4, "ref": "4.2",  "agent": "state-lifecycle" },
@@ -53,6 +64,10 @@
     "bpf-stack-overflow":              { "domain": 4, "ref": "4.10", "agent": "state-lifecycle" },
     "unclosed-accounts":               { "domain": 4, "ref": "4.11", "agent": "state-lifecycle" },
     "init-if-needed-no-reinit-guard":  { "domain": 4, "ref": "4.12", "agent": "state-lifecycle" },
+    "orphaned-state-reference":        { "domain": 4, "ref": "4.15", "agent": "state-lifecycle" },
+    "rate-change-no-settlement":       { "domain": 4, "ref": "4.16", "agent": "state-lifecycle" },
+    "pda-prefunding-dos":              { "domain": 4, "ref": "4.17", "agent": "state-lifecycle" },
+    "keeper-request-poisoning":        { "domain": 4, "ref": "4.18", "agent": "state-lifecycle" },
 
     "conservation-law-violation":      { "domain": 5, "ref": "5.1",  "agent": "invariant-logic" },
     "state-coupling-drift":            { "domain": 5, "ref": "5.2",  "agent": "invariant-logic" },
@@ -61,6 +76,9 @@
     "commutativity-violation":         { "domain": 5, "ref": "5.5",  "agent": "invariant-logic" },
     "cross-instruction-reasoning-gap": { "domain": 5, "ref": "5.6",  "agent": "invariant-logic" },
     "boundary-condition-abuse":        { "domain": 5, "ref": "5.7",  "agent": "invariant-logic" },
+    "instruction-introspection-bypass":{ "domain": 5, "ref": "5.9",  "agent": "invariant-logic" },
+    "admin-param-no-timelock":         { "domain": 5, "ref": "5.10", "agent": "invariant-logic" },
+    "config-update-path-mismatch":     { "domain": 5, "ref": "5.11", "agent": "invariant-logic" },
 
     "compound-vulnerability":          { "domain": 6, "ref": "6.1",  "agent": "synthesis" },
     "cross-instruction-compound":      { "domain": 6, "ref": "6.2",  "agent": "synthesis" },
