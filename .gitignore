@@ -10,6 +10,7 @@ saved-audits/
 .DS_Store
 __pycache__/
 *.pyc
+.venv/
 FUTURE-*.md
 THREAT-MODEL.md
 research/

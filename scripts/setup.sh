@@ -75,28 +75,60 @@ else
 fi
 
 # ---------------------------------------------------------------
-# 4. Python tree-sitter modules
+# 4. Python tree-sitter modules (uses venv if system pip is locked)
 # ---------------------------------------------------------------
 echo ""
 echo "Python packages (tree-sitter)"
-if python3 -c "import tree_sitter" 2>/dev/null; then
-    ok "tree-sitter module"
-else
-    skip "tree-sitter not installed -installing..."
+
+VENV_DIR="$ROOT_DIR/.venv"
+
+# Activate existing venv if present
+if [[ -f "$VENV_DIR/bin/activate" ]]; then
+    source "$VENV_DIR/bin/activate"
+fi
+
+install_via_pip() {
+    # Try direct pip first, fall back to creating a venv
     if pip3 install -q -r "$ROOT_DIR/requirements.txt" 2>/dev/null; then
-        ok "tree-sitter installed via pip"
+        return 0
+    fi
+
+    # pip failed (likely PEP 668 / --require-virtualenv) — create a venv
+    echo "  Creating virtualenv at $VENV_DIR ..."
+    if python3 -m venv "$VENV_DIR" 2>/dev/null; then
+        source "$VENV_DIR/bin/activate"
+        if pip3 install -q -r "$ROOT_DIR/requirements.txt" 2>/dev/null; then
+            return 0
+        fi
+    fi
+    return 1
+}
+
+if python3 -c "import tree_sitter" 2>/dev/null && python3 -c "import tree_sitter_rust" 2>/dev/null; then
+    ok "tree-sitter module"
+    ok "tree-sitter-rust module"
+else
+    skip "tree-sitter packages missing -installing..."
+    if install_via_pip; then
+        ok "tree-sitter packages installed via pip"
+        if [[ -f "$VENV_DIR/bin/activate" ]]; then
+            ok "virtualenv created at .venv/"
+        fi
     else
         bad "pip install failed -run: pip3 install -r requirements.txt"
     fi
-fi
 
-if python3 -c "import tree_sitter_rust" 2>/dev/null; then
-    ok "tree-sitter-rust module"
-else
-    if pip3 install -q tree-sitter-rust 2>/dev/null; then
-        ok "tree-sitter-rust installed via pip"
+    # Verify individual modules
+    if python3 -c "import tree_sitter" 2>/dev/null; then
+        ok "tree-sitter module"
     else
-        skip "tree-sitter-rust not installed -run: pip3 install tree-sitter-rust"
+        bad "tree-sitter module still not importable"
+    fi
+
+    if python3 -c "import tree_sitter_rust" 2>/dev/null; then
+        ok "tree-sitter-rust module"
+    else
+        bad "tree-sitter-rust module still not importable"
     fi
 fi
 

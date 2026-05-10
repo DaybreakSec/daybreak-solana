@@ -4,6 +4,9 @@ set -euo pipefail
 # emit-mir.sh - Emit MIR (Mid-level Intermediate Representation) for Solana programs
 # Usage: ./emit-mir.sh <cargo-project-directory> [output-directory]
 
+_EMIT_MIR_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$_EMIT_MIR_DIR/../_activate-venv.sh"
+
 usage() {
     echo "Usage: $0 <cargo-project-directory> [output-directory]" >&2
     exit 1

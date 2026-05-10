@@ -5,6 +5,7 @@ set -euo pipefail
 # Usage: ./run.sh <target-directory>
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../_activate-venv.sh"
 RULES_DIR="$SCRIPT_DIR/rules"
 
 usage() {

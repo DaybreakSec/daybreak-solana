@@ -5,6 +5,7 @@ set -euo pipefail
 # Usage: ./prescan.sh <target-directory> <output-directory>
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/_activate-venv.sh"
 
 usage() {
     echo "Usage: $0 <target-directory> <output-directory>" >&2
