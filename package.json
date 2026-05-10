@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "license": "Apache-2.0",
+  "engines": {
+    "node": ">=20"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/DaybreakSec/daybreak-solana.git"

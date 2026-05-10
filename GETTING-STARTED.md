@@ -20,7 +20,7 @@ There are two ways to run it: **locally** (for development) or via **Docker** (o
 
 | Tool | Version | Notes |
 |------|---------|-------|
-| Node.js | 18+ | Runtime for server and client build |
+| Node.js | 20+ | Runtime for server and client build |
 | Python 3 | 3.9+ | tree-sitter prescan extractors |
 | Claude CLI | latest | `npm install -g @anthropic-ai/claude-code` |
 | ast-grep | latest | Optional. `npm install -g @ast-grep/cli` |

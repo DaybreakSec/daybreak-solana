@@ -48,10 +48,18 @@ fi
 echo ""
 echo "Node dependencies"
 echo "  Installing npm dependencies..."
-if (cd "$ROOT_DIR" && npm install --no-audit --no-fund 2>&1 | tail -1); then
-    ok "npm install complete"
+if [[ -f "$ROOT_DIR/package-lock.json" ]]; then
+    if (cd "$ROOT_DIR" && npm ci --no-audit --no-fund 2>&1 | tail -1); then
+        ok "npm ci complete (from lockfile)"
+    else
+        bad "npm ci failed — try: npm install"
+    fi
 else
-    bad "npm install failed"
+    if (cd "$ROOT_DIR" && npm install --no-audit --no-fund 2>&1 | tail -1); then
+        ok "npm install complete"
+    else
+        bad "npm install failed"
+    fi
 fi
 
 # ---------------------------------------------------------------

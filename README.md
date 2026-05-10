@@ -60,7 +60,7 @@ Daybreak uses the Claude Code CLI for authentication. Running `claude` once open
 
 | Tool | Required | Notes |
 |------|----------|-------|
-| Node.js 18+ | Yes | Server runtime, client build |
+| Node.js 20+ | Yes | Server runtime, client build |
 | Python 3.9+ | Yes | tree-sitter prescan extractors |
 | Claude CLI | Yes | `npm install -g @anthropic-ai/claude-code` |
 | ast-grep | No | Pattern rules skipped if missing |
