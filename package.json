@@ -2,6 +2,11 @@
   "name": "daybreak-solana",
   "version": "1.0.0",
   "private": true,
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DaybreakSec/daybreak-solana.git"
+  },
   "description": "Daybreak Solana - security audit tool combining static analysis with focused LLM agents",
   "workspaces": [
     "server",

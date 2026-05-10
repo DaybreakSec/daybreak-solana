@@ -5,6 +5,7 @@ target/
 .env
 *.log
 state/
+server/state/
 saved-audits/
 .DS_Store
 __pycache__/
@@ -13,3 +14,4 @@ FUTURE-*.md
 THREAT-MODEL.md
 research/
 references/sample-reports/
+.claude/

@@ -1,6 +1,8 @@
 # Daybreak Solana
 
-Automated security audit tool for Solana programs. Daybreak runs a pipeline of specialized Claude-powered agents against your program's source code, preceded by static analysis, and presents findings in a web dashboard.
+**Open-source security audit tool for Solana programs.** Daybreak runs a pipeline of specialized Claude-powered agents against your program's source code, preceded by static analysis, and presents findings in a web dashboard.
+
+Built by [Daybreak](https://daybreaksec.com) — fractional security engineering for teams that need expert coverage without the overhead of traditional audit firms or full-time hires.
 
 ## How It Works
 
@@ -88,6 +90,14 @@ Host daybreak-server
 
 Then just `ssh daybreak-server` and the ports are forwarded automatically.
 
+## About Daybreak
+
+Daybreak provides embedded security engineering for emerging tech companies. Rather than point-in-time audits, Daybreak operates as a continuous security presence — reviewing code as it evolves, producing threat models, and maintaining full context across the product lifecycle.
+
+This tool is how we work. We open-sourced it so every team can run the same pipeline we use in production engagements.
+
+[daybreaksec.com](https://daybreaksec.com)
+
 ## License
 
-MIT
+Apache 2.0 — see [LICENSE](LICENSE).

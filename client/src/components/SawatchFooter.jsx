@@ -24,6 +24,22 @@ export default function SawatchFooter() {
           strokeOpacity="0.3"
         />
       </svg>
+      {/* Branding link */}
+      <a
+        href="https://daybreaksec.com"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="pointer-events-auto absolute font-mono text-text-tertiary hover:text-dawn-gold transition-colors"
+        style={{
+          bottom: '12px',
+          right: '24px',
+          fontSize: '11px',
+          letterSpacing: '0.05em',
+          opacity: 0.6,
+        }}
+      >
+        daybreaksec.com
+      </a>
     </div>
   );
 }
