@@ -65,6 +65,29 @@ Daybreak uses the Claude Code CLI for authentication. Running `claude` once open
 | cargo | No | Clippy + cargo-audit skipped if missing |
 | Docker 20.10+ | No | Alternative to local setup |
 
+## Remote Access (VPS / headless server)
+
+If you're running Daybreak on a remote server (VPS, cloud instance, etc.), use an SSH tunnel to access the dashboard from your local machine — no ports need to be exposed to the internet.
+
+```bash
+# From your local machine:
+ssh -L 5173:localhost:5173 -L 3000:localhost:3000 user@your-server-ip
+```
+
+Then open `http://localhost:5173` (dev mode) or `http://localhost:3000` (production) in your local browser.
+
+To make this persistent, add to `~/.ssh/config`:
+
+```
+Host daybreak-server
+  HostName your-server-ip
+  User your-username
+  LocalForward 5173 localhost:5173
+  LocalForward 3000 localhost:3000
+```
+
+Then just `ssh daybreak-server` and the ports are forwarded automatically.
+
 ## License
 
 MIT

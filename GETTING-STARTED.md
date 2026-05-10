@@ -140,6 +140,54 @@ docker compose exec daybreak whoami  # verify non-root (prints "daybreak")
 
 ---
 
+## Remote Access (VPS / headless server)
+
+If Daybreak is running on a remote machine (VPS, cloud instance, dev server), you won't have a local browser on that host. Use an **SSH tunnel** to securely forward the ports to your local machine.
+
+### SSH tunnel (recommended)
+
+From your local machine, open a tunnel to the server:
+
+```bash
+# Dev mode (two ports: Vite + API)
+ssh -L 5173:localhost:5173 -L 3000:localhost:3000 user@your-server-ip
+
+# Production mode (single port)
+ssh -L 3000:localhost:3000 user@your-server-ip
+```
+
+Then open `http://localhost:5173` (dev) or `http://localhost:3000` (production) in your local browser. All traffic is encrypted through your SSH connection — nothing is exposed to the public internet.
+
+### Persistent config
+
+Add to `~/.ssh/config` on your local machine so tunnels are automatic:
+
+```
+Host daybreak-server
+  HostName your-server-ip
+  User your-username
+  LocalForward 5173 localhost:5173
+  LocalForward 3000 localhost:3000
+```
+
+Then just `ssh daybreak-server` to connect and forward ports in one step.
+
+### Alternative: bind to 0.0.0.0
+
+If you prefer direct access (e.g., behind a private VPN or within a trusted network):
+
+```bash
+# Start Vite bound to all interfaces
+cd client && npx vite --host 0.0.0.0
+
+# Or in production, set BIND_HOST
+BIND_HOST=0.0.0.0 npm start
+```
+
+Then access `http://your-server-ip:5173` (dev) or `:3000` (production) directly. Make sure your firewall only allows trusted IPs.
+
+---
+
 ## Verify the install
 
 Whether local or Docker, these checks confirm everything is working:
