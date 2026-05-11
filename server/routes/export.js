@@ -3,7 +3,8 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const { isValidFindingId } = require('../lib/path-validator');
-const { readFindings, getStateDir } = require('../lib/state-io');
+const { readFindings, getStateDir, readJSON } = require('../lib/state-io');
+const { generatePdf } = require('../lib/pdf-report');
 const router = express.Router();
 
 function severityLabel(s) {
@@ -233,6 +234,63 @@ router.post('/json', (req, res) => {
     res.json({ findings });
   } catch (err) {
     res.status(500).json({ error: 'Failed to export findings' });
+  }
+});
+
+// POST /api/export/pdf - generate a styled PDF audit report
+router.post('/pdf', async (req, res) => {
+  try {
+    const { findingIds, includeThreatModel } = req.body;
+
+    if (findingIds !== undefined) {
+      if (!Array.isArray(findingIds) || !findingIds.every(id => isValidFindingId(id))) {
+        return res.status(400).json({ error: 'findingIds must be an array of valid finding IDs' });
+      }
+    }
+
+    const data = readFindings();
+    const findings = findingIds
+      ? data.findings.filter(f => findingIds.includes(f.id))
+      : data.findings.filter(f => f.status === 'valid');
+
+    if (findings.length === 0) {
+      return res.status(400).json({ error: 'No findings to export' });
+    }
+
+    // Read audit + scope metadata
+    const stateDir = getStateDir();
+    let audit = {};
+    const auditPath = path.join(stateDir, 'audit.json');
+    if (fs.existsSync(auditPath)) {
+      audit = JSON.parse(fs.readFileSync(auditPath, 'utf8'));
+    }
+
+    const scope = readJSON('scope.json') || {};
+
+    let threatModel = null;
+    if (includeThreatModel) {
+      const tmPath = path.join(stateDir, 'threat-model.json');
+      if (fs.existsSync(tmPath)) {
+        try { threatModel = JSON.parse(fs.readFileSync(tmPath, 'utf8')); } catch {}
+      }
+    }
+
+    const pdfBuffer = await generatePdf({ audit, findings, scope, threatModel });
+
+    const name = audit.repoUrl
+      ? audit.repoUrl.split('/').pop().replace('.git', '')
+      : audit.localPath
+        ? audit.localPath.split('/').pop()
+        : 'audit';
+    const date = new Date().toISOString().split('T')[0];
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="daybreak-${name}-${date}.pdf"`);
+    res.setHeader('Content-Length', pdfBuffer.length);
+    res.send(pdfBuffer);
+  } catch (err) {
+    console.error('PDF export error:', err);
+    res.status(500).json({ error: 'Failed to generate PDF: ' + err.message });
   }
 });
 

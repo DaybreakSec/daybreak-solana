@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { validatePath } = require('./path-validator');
 const { wrapSourceFile } = require('./sanitizer');
+const { matchesPattern } = require('./scope-resolver');
 
 const TOKEN_BUDGET = 150000; // leave room for system prompt + output
 
@@ -35,11 +36,20 @@ function estimateTokens(text) {
  * @param {Array<{path: string, loc: number}>} files - In-scope file list from scope.json
  * @param {string[]} excludedFiles - Paths to exclude
  * @param {string[]} [priorityKeywords] - Keywords to boost file priority (for agent domain)
+ * @param {{ includePatterns?: string[], excludePatterns?: string[] }} [scopeDirectives] - Scope filtering directives
  * @returns {{ formatted: string, totalLoc: number, totalTokens: number, warning: string|null, includedFiles: string[], excludedByBudget: string[] }}
  */
-function readSourceFiles(rootDir, files, excludedFiles = [], priorityKeywords = []) {
+function readSourceFiles(rootDir, files, excludedFiles = [], priorityKeywords = [], scopeDirectives = {}) {
   const excluded = new Set(excludedFiles);
-  const inScope = files.filter(f => !excluded.has(f.path));
+  let inScope = files.filter(f => !excluded.has(f.path));
+
+  // Apply exclude patterns from scope directives
+  const { includePatterns, excludePatterns } = scopeDirectives;
+  if (excludePatterns && excludePatterns.length > 0) {
+    inScope = inScope.filter(f => {
+      return !excludePatterns.some(pat => matchesPattern(f.path, pat));
+    });
+  }
 
   // Read file contents
   const fileData = [];
@@ -51,7 +61,7 @@ function readSourceFiles(rootDir, files, excludedFiles = [], priorityKeywords = 
       const tokens = estimateTokens(content);
       const lines = content.split('\n').length;
 
-      // Score: files matching priority keywords get boosted
+      // Score: files matching priority keywords or include patterns get boosted
       let score = lines; // base score = LOC (larger files first)
       if (priorityKeywords.length > 0) {
         const lowerPath = f.path.toLowerCase();
@@ -60,6 +70,12 @@ function readSourceFiles(rootDir, files, excludedFiles = [], priorityKeywords = 
             score += 100000; // large boost for keyword match
             break;
           }
+        }
+      }
+      // Boost files matching include patterns
+      if (includePatterns && includePatterns.length > 0) {
+        if (includePatterns.some(pat => matchesPattern(f.path, pat))) {
+          score += 200000; // higher boost for explicit include
         }
       }
 

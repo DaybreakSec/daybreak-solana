@@ -41,7 +41,15 @@ function writeJSON(filename, data) {
 }
 
 function readFindings() {
-  return readJSON('findings.json') || { findings: [] };
+  const data = readJSON('findings.json') || { findings: [] };
+  // Deduplicate by ID — keep the first occurrence
+  const seen = new Set();
+  data.findings = data.findings.filter(f => {
+    if (seen.has(f.id)) return false;
+    seen.add(f.id);
+    return true;
+  });
+  return data;
 }
 
 function writeFindings(data) {

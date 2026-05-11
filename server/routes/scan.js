@@ -6,6 +6,7 @@ const { startPipeline, cancelScan, getActiveScan, runPrescan, resolveTargetDir }
 const router = express.Router();
 
 const fs = require('fs');
+const { parseScopeDirectives, resolveFuzzySubdir } = require('../lib/scope-resolver');
 
 const BLOCKED_DIRS = ['/etc', '/var', '/proc', '/sys', '/dev', '/root', '/boot', '/lost+found'];
 const BLOCKED_SUFFIXES = ['/.ssh', '/.gnupg', '/.aws', '/.config/claude', '/.env'];
@@ -68,11 +69,32 @@ router.post('/scope', (req, res) => {
     return res.status(400).json({ error: 'No audit configuration found. Complete setup first.' });
   }
 
+  // Parse scope directives from scope notes
+  const directives = parseScopeDirectives(audit.scopeNotes);
+
   let targetDir;
   try {
-    targetDir = resolveTargetDir(audit);
+    targetDir = resolveTargetDir(audit, directives);
   } catch (err) {
     return res.status(400).json({ error: err.message });
+  }
+
+  // If fuzzy subdir was set, resolve it now against the target
+  if (directives._fuzzySubdir && directives.subdir) {
+    const resolved = resolveFuzzySubdir(targetDir, directives.subdir);
+    if (resolved) {
+      directives.subdir = resolved;
+      directives._fuzzySubdir = false;
+      const narrowed = path.join(targetDir, resolved);
+      if (fs.existsSync(narrowed) && fs.lstatSync(narrowed).isDirectory()) {
+        targetDir = narrowed;
+        console.log(`Fuzzy subdir resolved to: ${resolved}, narrowing scope to ${targetDir}`);
+      }
+    } else {
+      console.warn(`Fuzzy subdir hint "${directives.subdir}" did not match, scanning full repo`);
+      delete directives.subdir;
+      delete directives._fuzzySubdir;
+    }
   }
 
   // Return 202 immediately. Scope page polls for the result.
@@ -98,6 +120,14 @@ router.post('/scope', (req, res) => {
     }
     try {
       const scopeData = JSON.parse(stdout);
+
+      // Attach resolved directives so the UI can display them
+      const cleanDirectives = { ...directives };
+      delete cleanDirectives._fuzzySubdir;
+      if (Object.keys(cleanDirectives).length > 0) {
+        scopeData.resolvedDirectives = cleanDirectives;
+      }
+
       writeJSON('scope.json', scopeData);
     } catch (err) {
       console.error('Failed to parse scope.sh output:', err.message);

@@ -30,12 +30,14 @@ Analyze the structural data and produce a security architecture map with these s
 
 ### 1. Executive Summary
 
-Write 2-3 sentences describing:
-- What the program does at a high level
-- The overall risk profile (complexity, fund exposure, privilege separation)
-- The dominant architectural pattern (e.g. "multi-vault staking with role-based access", "permissionless AMM with bonding curve mechanics")
+Use this structure — keep each item to one short sentence:
 
-Keep it factual and architectural. Do not list specific bugs.
+- **System**: What the program(s) do at a high level
+- **Architecture**: Dominant pattern (e.g. "multi-vault staking with role-based access")
+- **Risk profile**: Overall risk level with brief rationale (complexity, fund exposure, privilege separation)
+- **Critical areas** (bulleted list): 3-6 top risk areas, each as a single concise bullet — name the component and the structural concern, no exploit details
+
+Keep it factual and architectural. Do not list specific bugs or attack steps.
 
 ### 2. Program Summary
 

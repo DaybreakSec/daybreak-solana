@@ -80,7 +80,8 @@ function buildUserPrompt(agentKey, rootDir, scope, audit) {
   const files = scope.files || [];
   const excludedFiles = scope.excludedFiles || [];
   const fileKeywords = AGENT_FILE_KEYWORDS[agentKey] || [];
-  const source = readSourceFiles(rootDir, files, excludedFiles, fileKeywords);
+  const scopeDirectives = scope.resolvedDirectives || {};
+  const source = readSourceFiles(rootDir, files, excludedFiles, fileKeywords, scopeDirectives);
 
   // Build the prompt
   const parts = [];

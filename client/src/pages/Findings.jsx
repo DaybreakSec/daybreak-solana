@@ -100,6 +100,9 @@ export default function Findings({ onStatusChange }) {
   }, [fetchFindings]);
 
   const updateFinding = useCallback(async (id, update) => {
+    // Optimistic local update so the card moves immediately
+    setFindings(prev => prev.map(f => f.id === id ? { ...f, ...update } : f));
+
     try {
       const res = await fetch(`/api/findings/${id}`, {
         method: 'PUT',

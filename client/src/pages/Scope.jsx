@@ -183,6 +183,38 @@ export default function Scope() {
         </p>
       </div>
 
+      {/* Resolved scope directives banner */}
+      {scope.resolvedDirectives && Object.keys(scope.resolvedDirectives).length > 0 && (
+        <div
+          className="mb-4 font-mono text-text-secondary"
+          style={{
+            fontSize: '12px',
+            padding: '8px 12px',
+            borderRadius: 'var(--radius-md)',
+            border: '0.5px solid var(--color-border-default)',
+            background: 'var(--color-bg-elevated)',
+          }}
+        >
+          <span className="text-text-tertiary">resolved: </span>
+          {scope.resolvedDirectives.branch && (
+            <span>branch <span className="text-text-primary">{scope.resolvedDirectives.branch}</span> · </span>
+          )}
+          {scope.resolvedDirectives.pr && (
+            <span>pr <span className="text-text-primary">#{scope.resolvedDirectives.pr}</span> · </span>
+          )}
+          {scope.resolvedDirectives.commit && (
+            <span>commit <span className="text-text-primary">{scope.resolvedDirectives.commit.slice(0, 8)}</span> · </span>
+          )}
+          {scope.resolvedDirectives.tag && (
+            <span>tag <span className="text-text-primary">{scope.resolvedDirectives.tag}</span> · </span>
+          )}
+          {scope.resolvedDirectives.subdir && (
+            <span>scoped to <span className="text-text-primary">{scope.resolvedDirectives.subdir}/</span> · </span>
+          )}
+          <span>{inScopeFiles.length} files, {inScopeLoc.toLocaleString()} loc</span>
+        </div>
+      )}
+
       {/* File list */}
       <div
         className="mb-6 bg-bg-elevated overflow-hidden"

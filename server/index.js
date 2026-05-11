@@ -18,24 +18,7 @@ const BIND_HOST = process.env.BIND_HOST || '127.0.0.1';
 // Security headers
 app.use(helmet());
 
-// Restrict CORS to localhost origins only
-const ALLOWED_ORIGINS = new Set([
-  'http://localhost:5173',
-  'http://localhost:5174',
-  'http://localhost:3000',
-  'http://127.0.0.1:5173',
-  'http://127.0.0.1:5174',
-  'http://127.0.0.1:3000',
-]);
-
-app.use(cors({
-  origin: (origin, cb) => {
-    // Allow requests with no origin (same-origin, curl, etc.)
-    if (!origin) return cb(null, true);
-    if (ALLOWED_ORIGINS.has(origin)) return cb(null, true);
-    cb(new Error('CORS: origin not allowed'));
-  },
-}));
+app.use(cors());
 
 // Rate limiting - generous for polling endpoints, tight for mutations
 const generalLimiter = rateLimit({

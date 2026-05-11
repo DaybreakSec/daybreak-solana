@@ -15,13 +15,10 @@ export default function Export() {
   const [selected, setSelected] = useState(new Set());
   const [selectionMode, setSelectionMode] = useState('all');
   const [selectedSeverities, setSelectedSeverities] = useState(new Set(SEVERITIES));
-  const [format, setFormat] = useState('markdown');
+  const [format, setFormat] = useState('pdf');
   const [includeThreatModel, setIncludeThreatModel] = useState(false);
-  const [repo, setRepo] = useState('');
   const [report, setReport] = useState('');
-  const [exportResult, setExportResult] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [repoError, setRepoError] = useState('');
   const [audit, setAudit] = useState(null);
   const [saveName, setSaveName] = useState('');
   const [saving, setSaving] = useState(false);
@@ -80,56 +77,38 @@ export default function Export() {
   }
 
   async function handleExport() {
-    setRepoError('');
-
-    if (format === 'github') {
-      if (!/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(repo)) {
-        setRepoError('Repository must be in owner/repo format');
-        return;
-      }
-    }
-
     setLoading(true);
-    setExportResult(null);
     setReport('');
 
     const ids = Array.from(selected);
 
-    if (format === 'github') {
+    if (format === 'pdf') {
       try {
-        const res = await fetch('/api/export/github-issues', {
+        const res = await fetch('/api/export/pdf', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ repo, findingIds: ids }),
+          body: JSON.stringify({ findingIds: ids, includeThreatModel }),
         });
-        setExportResult(await res.json());
-      } catch (err) {
-        setExportResult({ error: err.message });
-        toast('Export failed: ' + err.message, 'error');
-      }
-    } else if (format === 'json') {
-      try {
-        const res = await fetch('/api/export/json', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ findingIds: ids }),
-        });
-        const data = await res.json();
-        const blob = new Blob([JSON.stringify(data.findings, null, 2)], { type: 'application/json' });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          toast(err.error || 'PDF generation failed', 'error');
+          setLoading(false);
+          return;
+        }
+        const blob = await res.blob();
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `audit-findings-${new Date().toISOString().split('T')[0]}.json`;
+        const disposition = res.headers.get('Content-Disposition') || '';
+        const filenameMatch = disposition.match(/filename="(.+?)"/);
+        a.download = filenameMatch ? filenameMatch[1] : `audit-report-${new Date().toISOString().split('T')[0]}.pdf`;
         a.click();
         URL.revokeObjectURL(url);
-        toast('JSON file downloaded', 'success');
+        toast('PDF report downloaded', 'success');
       } catch (err) {
-        toast('JSON export failed: ' + err.message, 'error');
+        toast('PDF export failed: ' + err.message, 'error');
       }
-    } else if (format === 'print') {
-      window.print();
-    } else {
-      // markdown
+    } else if (format === 'markdown') {
       try {
         const res = await fetch('/api/export/report', {
           method: 'POST',
@@ -247,22 +226,30 @@ export default function Export() {
             <SectionLabel>format</SectionLabel>
             <div className="mt-2 space-y-1">
               {[
-                { key: 'github', label: 'github issues' },
+                { key: 'pdf', label: 'pdf report' },
                 { key: 'markdown', label: 'markdown report' },
-                { key: 'json', label: 'json export' },
-                { key: 'print', label: 'print / pdf' },
+                { key: 'github', label: 'github issues', disabled: true },
               ].map(f => (
-                <label key={f.key} className="flex items-center gap-2 cursor-pointer">
+                <label
+                  key={f.key}
+                  className={`flex items-center gap-2 ${f.disabled ? 'opacity-40' : 'cursor-pointer'}`}
+                >
                   <input
                     type="radio"
                     name="format"
                     checked={format === f.key}
-                    onChange={() => setFormat(f.key)}
+                    onChange={() => { if (!f.disabled) setFormat(f.key); }}
+                    disabled={f.disabled}
                     className="accent-[var(--color-dawn-amber)]"
                   />
                   <span className="font-mono text-text-secondary" style={{ fontSize: '13px' }}>
                     {f.label}
                   </span>
+                  {f.disabled && (
+                    <span className="font-mono text-text-tertiary" style={{ fontSize: '11px' }}>
+                      coming soon
+                    </span>
+                  )}
                 </label>
               ))}
             </div>
@@ -317,41 +304,19 @@ export default function Export() {
             </ActionButton>
           </div>
 
-          {/* GitHub repo input */}
-          {format === 'github' && (
-            <div>
-              <SectionLabel>repository</SectionLabel>
-              <input
-                type="text"
-                value={repo}
-                onChange={e => setRepo(e.target.value)}
-                placeholder="owner/repo"
-                className="w-full font-mono text-text-primary mt-2"
-                style={{
-                  fontSize: '14px',
-                  padding: '8px 0',
-                  border: 'none',
-                  borderBottom: '0.5px solid var(--color-border-default)',
-                  outline: 'none',
-                  background: 'transparent',
-                }}
-              />
-              {repoError && (
-                <p className="font-mono text-dawn-coral mt-1" style={{ fontSize: '13px' }}>
-                  {repoError}
-                </p>
-              )}
-            </div>
-          )}
-
           {/* Export button */}
           <ActionButton
             variant="primary"
             onClick={handleExport}
-            disabled={loading || selected.size === 0 || (format === 'github' && !repo)}
+            disabled={loading || selected.size === 0}
             style={{ width: '100%', justifyContent: 'center' }}
           >
-            {loading ? 'exporting...' : format === 'print' ? 'print / save pdf' : 'export →'}
+            {loading
+              ? (format === 'pdf' ? 'generating pdf...' : 'exporting...')
+              : format === 'pdf' ? 'generate pdf report →'
+              : format === 'markdown' ? 'generate markdown →'
+              : 'export →'
+            }
           </ActionButton>
 
           {report && (
@@ -360,20 +325,26 @@ export default function Export() {
             </ActionButton>
           )}
 
-          {/* GitHub export results */}
-          {exportResult && (
-            <div className="font-mono" style={{ fontSize: '13px' }}>
-              {exportResult.error ? (
-                <p className="text-dawn-coral">{exportResult.error}</p>
-              ) : (
-                (exportResult.created || []).map((c, i) => (
-                  <p key={i} className={c.error ? 'text-dawn-coral' : 'text-dawn-gold'}>
-                    {c.findingId}: {c.issueUrl || c.error}
-                  </p>
-                ))
-              )}
-            </div>
-          )}
+          {/* CTA */}
+          <div
+            style={{
+              borderTop: '0.5px solid var(--color-border-subtle)',
+              paddingTop: '16px',
+            }}
+          >
+            <p className="font-mono text-text-tertiary" style={{ fontSize: '12px', lineHeight: '1.5' }}>
+              want a full audit?{' '}
+              <a
+                href="https://daybreaksec.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-dawn-coral hover:text-dawn-amber"
+                style={{ textDecoration: 'none' }}
+              >
+                reach out to daybreak
+              </a>
+            </p>
+          </div>
 
           {/* Save audit */}
           <div style={{ borderTop: '0.5px solid var(--color-border-subtle)', paddingTop: '16px' }}>

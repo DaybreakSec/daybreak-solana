@@ -100,14 +100,12 @@ export default function Setup() {
 
     setLoading(true);
     const payload = {
-      phase: 'setup',
       mode,
       repoUrl: mode === 'git' ? repoUrl : undefined,
       localPath: mode === 'local' ? localPath : undefined,
       scopeNotes,
       maxTokenBudget: tokenBudget,
       model,
-      startedAt: new Date().toISOString(),
     };
 
     try {
@@ -372,6 +370,9 @@ export default function Setup() {
           onFocus={e => e.target.style.borderBottomColor = 'var(--color-border-strong)'}
           onBlur={e => e.target.style.borderBottomColor = 'var(--color-border-default)'}
         />
+        <p className="font-mono text-text-tertiary mt-1" style={{ fontSize: '12px', letterSpacing: '0.02em' }}>
+          hints: branch:name · pr:123 · commit:abc123 · tag:v1 · dir:path · include:glob · exclude:glob
+        </p>
       </div>
 
       {/* Token budget */}

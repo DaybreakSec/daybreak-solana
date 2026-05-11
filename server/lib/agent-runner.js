@@ -15,6 +15,7 @@ const validationSchema = require('./validation-schema');
 const scoutSchema = require('./scout-schema');
 const threatModelSchema = require('./threat-model-schema');
 const bus = require('./event-bus');
+const { parseScopeDirectives, resolveFuzzySubdir } = require('./scope-resolver');
 
 const AGENT_KEYS = [
   'accounts-access',
@@ -240,9 +241,12 @@ async function appendFindings(agentKey, newFindings, targetDir) {
       }
     }
 
+    // Count existing findings for this agent so new IDs don't collide
+    const existingAgentCount = existing.filter(f => f.agent === agentKey).length;
+
     for (let i = 0; i < validFindings.length; i++) {
       const f = validFindings[i];
-      const id = `${agentKey}-${String(i + 1).padStart(3, '0')}`;
+      const id = `${agentKey}-${String(existingAgentCount + i + 1).padStart(3, '0')}`;
 
       const finding = {
         id,
@@ -443,7 +447,7 @@ async function runValidation(targetDir, scope, audit, model, timeoutMs) {
  */
 const BLOCKED_DIRS = ['/etc', '/var', '/proc', '/sys', '/dev', '/root'];
 
-function resolveTargetDir(audit) {
+function resolveTargetDir(audit, directives) {
   if (audit.localPath) {
     const resolved = path.resolve(audit.localPath);
 
@@ -463,7 +467,7 @@ function resolveTargetDir(audit) {
       throw new Error(`Local path is not a directory: ${resolved}`);
     }
 
-    return resolved;
+    return applySubdir(resolved, directives);
   }
 
   if (audit.mode === 'git' && audit.repoUrl) {
@@ -477,6 +481,8 @@ function resolveTargetDir(audit) {
     const hash = crypto.createHash('sha256').update(url).digest('hex').slice(0, 12);
     const cloneDir = path.join(os.tmpdir(), `daybreak-${safeName}-${hash}`);
 
+    const needsRefCheckout = directives && (directives.branch || directives.pr || directives.commit || directives.tag);
+
     if (fs.existsSync(path.join(cloneDir, '.git'))) {
       // Already cloned - pull latest
       console.log(`Git repo already cloned at ${cloneDir}, pulling latest...`);
@@ -486,10 +492,20 @@ function resolveTargetDir(audit) {
         console.warn('git pull failed, using existing clone');
       }
     } else {
-      // Fresh clone
-      console.log(`Cloning ${url} to ${cloneDir}...`);
-      execFileSync('git', ['clone', '--depth', '1', '--config', 'core.hooksPath=/dev/null', url, cloneDir], { stdio: 'pipe', timeout: 120000 });
+      // Fresh clone — use full clone if we need a specific ref, otherwise shallow
+      if (needsRefCheckout) {
+        console.log(`Cloning ${url} to ${cloneDir} (full, for ref checkout)...`);
+        execFileSync('git', ['clone', '--config', 'core.hooksPath=/dev/null', url, cloneDir], { stdio: 'pipe', timeout: 180000 });
+      } else {
+        console.log(`Cloning ${url} to ${cloneDir}...`);
+        execFileSync('git', ['clone', '--depth', '1', '--config', 'core.hooksPath=/dev/null', url, cloneDir], { stdio: 'pipe', timeout: 120000 });
+      }
       fs.chmodSync(cloneDir, 0o700);
+    }
+
+    // Apply git ref directives
+    if (directives) {
+      applyGitRef(cloneDir, directives);
     }
 
     const localPath = cloneDir;
@@ -503,10 +519,96 @@ function resolveTargetDir(audit) {
       fs.writeFileSync(auditPath, JSON.stringify(currentAudit, null, 2));
     } catch {}
 
-    return localPath;
+    return applySubdir(localPath, directives);
   }
 
   throw new Error('No target path configured. Set localPath or repoUrl in audit settings.');
+}
+
+/**
+ * Checkout the requested git ref (branch, PR, commit, or tag).
+ */
+function applyGitRef(cloneDir, directives) {
+  try {
+    if (directives.pr) {
+      console.log(`Fetching PR #${directives.pr}...`);
+      // Unshallow if needed
+      try {
+        execFileSync('git', ['fetch', '--unshallow'], { cwd: cloneDir, stdio: 'pipe', timeout: 120000 });
+      } catch { /* already full clone */ }
+      execFileSync('git', ['fetch', 'origin', `pull/${directives.pr}/head:pr-${directives.pr}`],
+        { cwd: cloneDir, stdio: 'pipe', timeout: 60000 });
+      execFileSync('git', ['checkout', `pr-${directives.pr}`],
+        { cwd: cloneDir, stdio: 'pipe', timeout: 30000 });
+      console.log(`Checked out PR #${directives.pr}`);
+    } else if (directives.branch) {
+      console.log(`Checking out branch: ${directives.branch}...`);
+      try {
+        execFileSync('git', ['fetch', '--unshallow'], { cwd: cloneDir, stdio: 'pipe', timeout: 120000 });
+      } catch { /* already full clone */ }
+      execFileSync('git', ['fetch', 'origin', directives.branch],
+        { cwd: cloneDir, stdio: 'pipe', timeout: 60000 });
+      execFileSync('git', ['checkout', directives.branch],
+        { cwd: cloneDir, stdio: 'pipe', timeout: 30000 });
+      console.log(`Checked out branch: ${directives.branch}`);
+    } else if (directives.commit) {
+      console.log(`Checking out commit: ${directives.commit}...`);
+      try {
+        execFileSync('git', ['fetch', '--unshallow'], { cwd: cloneDir, stdio: 'pipe', timeout: 120000 });
+      } catch { /* already full clone */ }
+      execFileSync('git', ['checkout', directives.commit],
+        { cwd: cloneDir, stdio: 'pipe', timeout: 30000 });
+      console.log(`Checked out commit: ${directives.commit}`);
+    } else if (directives.tag) {
+      console.log(`Checking out tag: ${directives.tag}...`);
+      try {
+        execFileSync('git', ['fetch', '--unshallow'], { cwd: cloneDir, stdio: 'pipe', timeout: 120000 });
+      } catch { /* already full clone */ }
+      execFileSync('git', ['fetch', 'origin', 'tag', directives.tag],
+        { cwd: cloneDir, stdio: 'pipe', timeout: 60000 });
+      execFileSync('git', ['checkout', `tags/${directives.tag}`],
+        { cwd: cloneDir, stdio: 'pipe', timeout: 30000 });
+      console.log(`Checked out tag: ${directives.tag}`);
+    }
+  } catch (err) {
+    console.error(`Failed to apply git ref directive: ${err.message}`);
+  }
+}
+
+/**
+ * If a subdir directive is set, narrow the target to that subdirectory.
+ * For fuzzy hints, resolve against the actual directory tree.
+ */
+function applySubdir(baseDir, directives) {
+  if (!directives || !directives.subdir) return baseDir;
+
+  let subdir = directives.subdir;
+
+  // Resolve fuzzy subdirectory hints
+  if (directives._fuzzySubdir) {
+    const resolved = resolveFuzzySubdir(baseDir, subdir);
+    if (resolved) {
+      subdir = resolved;
+      directives.subdir = resolved; // update for downstream consumers
+      directives._fuzzySubdir = false;
+      console.log(`Fuzzy subdir "${directives.subdir}" resolved to: ${resolved}`);
+    } else {
+      console.warn(`Fuzzy subdir hint "${subdir}" did not match any directory, using full repo`);
+      delete directives.subdir;
+      delete directives._fuzzySubdir;
+      return baseDir;
+    }
+  }
+
+  const narrowed = path.join(baseDir, subdir);
+  if (fs.existsSync(narrowed) && fs.lstatSync(narrowed).isDirectory()) {
+    console.log(`Scope narrowed to subdirectory: ${subdir}`);
+    return narrowed;
+  }
+
+  console.warn(`Subdirectory "${subdir}" not found in ${baseDir}, using full repo`);
+  delete directives.subdir;
+  return baseDir;
 }
 
 /**
@@ -890,7 +992,8 @@ async function runSynthesis(targetDir, scope, audit, model, timeoutMs) {
  */
 async function startPipeline(audit, scope) {
   const stateDir = require('./state-io').getStateDir();
-  const targetDir = resolveTargetDir(audit);
+  const directives = parseScopeDirectives(audit.scopeNotes);
+  const targetDir = resolveTargetDir(audit, directives);
   const ALLOWED_MODELS = ['sonnet', 'opus', 'haiku', 'claude-3-5-sonnet-20241022', 'claude-3-opus-20240229', 'claude-3-haiku-20240307'];
   const rawModel = audit.model || 'sonnet';
   const model = ALLOWED_MODELS.includes(rawModel) ? rawModel : 'sonnet';
