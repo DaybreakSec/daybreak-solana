@@ -18,8 +18,6 @@
 
 ## Pipeline
 
-<img src="assets/pipeline.svg" alt="Pipeline diagram" width="100%"/>
-
 **Prescan** extracts structural data using tree-sitter, ast-grep rules, clippy, and cargo-audit. Outputs feed into agents as prioritized context.
 
 **Scout** maps program structure: instructions, accounts, access control patterns, data flows.
