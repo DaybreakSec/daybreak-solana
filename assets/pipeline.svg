@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 140">
+  <defs>
+    <linearGradient id="dg" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#E85A8C"/>
+      <stop offset="40%" stop-color="#ED7F65"/>
+      <stop offset="70%" stop-color="#F5A65B"/>
+      <stop offset="100%" stop-color="#F5D78E"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="960" height="140" rx="8" fill="#0F1729"/>
+
+  <g transform="translate(30, 30)">
+    <!-- Stage 1: Prescan -->
+    <rect x="0" y="22" width="80" height="36" rx="6" fill="#1A2138" stroke="rgba(245,239,230,0.10)" stroke-width="0.5"/>
+    <text x="40" y="36" font-family="monospace" font-size="7" fill="#8892AB" text-anchor="middle" letter-spacing="1.5">STAGE 1</text>
+    <text x="40" y="49" font-family="monospace" font-size="10" fill="#F5EFE6" text-anchor="middle">prescan</text>
+    <text x="40" y="72" font-family="system-ui, sans-serif" font-size="8" fill="#8892AB" text-anchor="middle">tree-sitter, ast-grep</text>
+    <text x="40" y="82" font-family="system-ui, sans-serif" font-size="8" fill="#8892AB" text-anchor="middle">clippy, cargo-audit</text>
+
+    <!-- Arrow -->
+    <line x1="84" y1="40" x2="104" y2="40" stroke="url(#dg)" stroke-width="1"/>
+    <polygon points="102,36 110,40 102,44" fill="#ED7F65"/>
+
+    <!-- Stage 2: Scout -->
+    <rect x="114" y="22" width="80" height="36" rx="6" fill="#1A2138" stroke="rgba(245,239,230,0.10)" stroke-width="0.5"/>
+    <text x="154" y="36" font-family="monospace" font-size="7" fill="#8892AB" text-anchor="middle" letter-spacing="1.5">STAGE 2</text>
+    <text x="154" y="49" font-family="monospace" font-size="10" fill="#F5EFE6" text-anchor="middle">scout</text>
+    <text x="154" y="72" font-family="system-ui, sans-serif" font-size="8" fill="#8892AB" text-anchor="middle">map instructions,</text>
+    <text x="154" y="82" font-family="system-ui, sans-serif" font-size="8" fill="#8892AB" text-anchor="middle">accounts, flows</text>
+
+    <!-- Arrow -->
+    <line x1="198" y1="40" x2="218" y2="40" stroke="url(#dg)" stroke-width="1"/>
+    <polygon points="216,36 224,40 216,44" fill="#ED7F65"/>
+
+    <!-- Stage 3: 5 Agents -->
+    <rect x="228" y="6" width="130" height="68" rx="6" fill="#1A2138" stroke="rgba(232,90,140,0.25)" stroke-width="0.5"/>
+    <text x="293" y="19" font-family="monospace" font-size="7" fill="#E85A8C" text-anchor="middle" letter-spacing="1.5">STAGE 3 &middot; PARALLEL</text>
+    <text x="252" y="35" font-family="monospace" font-size="8" fill="#F5EFE6">accounts-access</text>
+    <text x="252" y="46" font-family="monospace" font-size="8" fill="#F5EFE6">cpi-token</text>
+    <text x="252" y="57" font-family="monospace" font-size="8" fill="#F5EFE6">arithmetic-economic</text>
+    <text x="252" y="68" font-family="monospace" font-size="8" fill="#F5EFE6">state-lifecycle</text>
+    <text x="340" y="35" font-family="monospace" font-size="8" fill="#8892AB">+ threat</text>
+    <text x="340" y="46" font-family="monospace" font-size="8" fill="#8892AB">  model</text>
+    <text x="252" y="79" font-family="system-ui, sans-serif" font-size="8" fill="#8892AB">invariant-logic</text>
+
+    <!-- Arrow -->
+    <line x1="362" y1="40" x2="382" y2="40" stroke="url(#dg)" stroke-width="1"/>
+    <polygon points="380,36 388,40 380,44" fill="#ED7F65"/>
+
+    <!-- Stage 4: Deepen -->
+    <rect x="392" y="22" width="80" height="36" rx="6" fill="#1A2138" stroke="rgba(245,239,230,0.10)" stroke-width="0.5"/>
+    <text x="432" y="36" font-family="monospace" font-size="7" fill="#8892AB" text-anchor="middle" letter-spacing="1.5">STAGE 4</text>
+    <text x="432" y="49" font-family="monospace" font-size="10" fill="#F5EFE6" text-anchor="middle">deepen</text>
+    <text x="432" y="72" font-family="system-ui, sans-serif" font-size="8" fill="#8892AB" text-anchor="middle">re-analyze high/</text>
+    <text x="432" y="82" font-family="system-ui, sans-serif" font-size="8" fill="#8892AB" text-anchor="middle">critical findings</text>
+
+    <!-- Arrow -->
+    <line x1="476" y1="40" x2="496" y2="40" stroke="url(#dg)" stroke-width="1"/>
+    <polygon points="494,36 502,40 494,44" fill="#ED7F65"/>
+
+    <!-- Stage 5: Synthesis -->
+    <rect x="506" y="22" width="80" height="36" rx="6" fill="#1A2138" stroke="rgba(245,239,230,0.10)" stroke-width="0.5"/>
+    <text x="546" y="36" font-family="monospace" font-size="7" fill="#8892AB" text-anchor="middle" letter-spacing="1.5">STAGE 5</text>
+    <text x="546" y="49" font-family="monospace" font-size="10" fill="#F5EFE6" text-anchor="middle">synthesis</text>
+    <text x="546" y="72" font-family="system-ui, sans-serif" font-size="8" fill="#8892AB" text-anchor="middle">cross-agent compound</text>
+    <text x="546" y="82" font-family="system-ui, sans-serif" font-size="8" fill="#8892AB" text-anchor="middle">vulnerability check</text>
+
+    <!-- Arrow -->
+    <line x1="590" y1="40" x2="610" y2="40" stroke="url(#dg)" stroke-width="1"/>
+    <polygon points="608,36 616,40 608,44" fill="#ED7F65"/>
+
+    <!-- Stage 6: Validate -->
+    <rect x="620" y="22" width="80" height="36" rx="6" fill="#1A2138" stroke="rgba(232,90,140,0.20)" stroke-width="0.5"/>
+    <text x="660" y="36" font-family="monospace" font-size="7" fill="#ED7F65" text-anchor="middle" letter-spacing="1.5">STAGE 6</text>
+    <text x="660" y="49" font-family="monospace" font-size="10" fill="#F5EFE6" text-anchor="middle">validate</text>
+    <text x="660" y="72" font-family="system-ui, sans-serif" font-size="8" fill="#8892AB" text-anchor="middle">adversarial agent</text>
+    <text x="660" y="82" font-family="system-ui, sans-serif" font-size="8" fill="#8892AB" text-anchor="middle">disproves findings</text>
+
+    <!-- Arrow -->
+    <line x1="704" y1="40" x2="724" y2="40" stroke="url(#dg)" stroke-width="1"/>
+    <polygon points="722,36 730,40 722,44" fill="#F5D78E"/>
+
+    <!-- Output -->
+    <rect x="734" y="16" width="150" height="48" rx="6" fill="rgba(245,166,91,0.08)" stroke="rgba(245,166,91,0.25)" stroke-width="0.5"/>
+    <text x="809" y="32" font-family="monospace" font-size="7" fill="#F5A65B" text-anchor="middle" letter-spacing="1.5">OUTPUT</text>
+    <text x="809" y="46" font-family="monospace" font-size="9" fill="#F5EFE6" text-anchor="middle">PDF / Markdown / JSON</text>
+    <text x="809" y="57" font-family="monospace" font-size="9" fill="#F5EFE6" text-anchor="middle">+ GitHub Issues</text>
+  </g>
+
+  <!-- Bottom gradient rule -->
+  <rect x="0" y="138" width="960" height="2" fill="url(#dg)"/>
+</svg>

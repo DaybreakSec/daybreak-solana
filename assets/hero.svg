@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 320">
+  <defs>
+    <linearGradient id="dawn" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#E85A8C"/>
+      <stop offset="40%" stop-color="#ED7F65"/>
+      <stop offset="70%" stop-color="#F5A65B"/>
+      <stop offset="100%" stop-color="#F5D78E"/>
+    </linearGradient>
+    <radialGradient id="motif" cx="85%" cy="15%" r="45%">
+      <stop offset="0%" stop-color="#E85A8C" stop-opacity="0.18"/>
+      <stop offset="35%" stop-color="#ED7F65" stop-opacity="0.10"/>
+      <stop offset="65%" stop-color="#F5A65B" stop-opacity="0.04"/>
+      <stop offset="100%" stop-color="#F5A65B" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="960" height="320" rx="12" fill="#0F1729"/>
+  <rect width="960" height="320" rx="12" fill="url(#motif)"/>
+
+  <!-- Gradient rule -->
+  <rect x="60" y="234" width="200" height="1.5" rx="1" fill="url(#dawn)"/>
+
+  <!-- Brand -->
+  <text x="60" y="100" font-family="Georgia, serif" font-style="italic" font-weight="500" font-size="42" fill="#F5EFE6">Daybreak</text>
+  <text x="262" y="100" font-family="monospace" font-size="16" fill="#8892AB" letter-spacing="3">SOLANA</text>
+
+  <!-- Tagline -->
+  <text x="60" y="145" font-family="system-ui, sans-serif" font-size="17" fill="#B8C0D1">Open-source multi-agent security auditor for Solana programs.</text>
+
+  <!-- Pipeline diagram -->
+  <g transform="translate(60, 180)">
+    <!-- Nodes -->
+    <rect x="0" y="0" width="70" height="28" rx="4" fill="#1A2138" stroke="rgba(245,239,230,0.10)" stroke-width="0.5"/>
+    <text x="35" y="18" font-family="monospace" font-size="9" fill="#8892AB" text-anchor="middle">prescan</text>
+
+    <rect x="95" y="0" width="56" height="28" rx="4" fill="#1A2138" stroke="rgba(245,239,230,0.10)" stroke-width="0.5"/>
+    <text x="123" y="18" font-family="monospace" font-size="9" fill="#8892AB" text-anchor="middle">scout</text>
+
+    <!-- 5 agent stack -->
+    <rect x="176" y="-16" width="100" height="12" rx="3" fill="#1A2138" stroke="rgba(232,90,140,0.3)" stroke-width="0.5"/>
+    <text x="226" y="-7" font-family="monospace" font-size="7" fill="#E85A8C" text-anchor="middle">accounts-access</text>
+    <rect x="176" y="0" width="100" height="12" rx="3" fill="#1A2138" stroke="rgba(240,141,74,0.3)" stroke-width="0.5"/>
+    <text x="226" y="9" font-family="monospace" font-size="7" fill="#F08D4A" text-anchor="middle">cpi-token</text>
+    <rect x="176" y="16" width="100" height="12" rx="3" fill="#1A2138" stroke="rgba(232,194,107,0.3)" stroke-width="0.5"/>
+    <text x="226" y="25" font-family="monospace" font-size="7" fill="#E8C26B" text-anchor="middle">arithmetic-econ</text>
+    <rect x="176" y="32" width="100" height="12" rx="3" fill="#1A2138" stroke="rgba(122,146,196,0.3)" stroke-width="0.5"/>
+    <text x="226" y="41" font-family="monospace" font-size="7" fill="#7A92C4" text-anchor="middle">state-lifecycle</text>
+    <rect x="176" y="48" width="100" height="12" rx="3" fill="#1A2138" stroke="rgba(139,149,168,0.3)" stroke-width="0.5"/>
+    <text x="226" y="57" font-family="monospace" font-size="7" fill="#8B95A8" text-anchor="middle">invariant-logic</text>
+
+    <!-- Arrows -->
+    <line x1="72" y1="14" x2="93" y2="14" stroke="#8892AB" stroke-width="0.5" stroke-dasharray="3,2"/>
+    <line x1="153" y1="14" x2="174" y2="14" stroke="#8892AB" stroke-width="0.5" stroke-dasharray="3,2"/>
+    <line x1="278" y1="14" x2="300" y2="14" stroke="#8892AB" stroke-width="0.5" stroke-dasharray="3,2"/>
+    <line x1="376" y1="14" x2="398" y2="14" stroke="#8892AB" stroke-width="0.5" stroke-dasharray="3,2"/>
+    <line x1="476" y1="14" x2="498" y2="14" stroke="#8892AB" stroke-width="0.5" stroke-dasharray="3,2"/>
+
+    <rect x="302" y="0" width="72" height="28" rx="4" fill="#1A2138" stroke="rgba(245,239,230,0.10)" stroke-width="0.5"/>
+    <text x="338" y="18" font-family="monospace" font-size="9" fill="#8892AB" text-anchor="middle">deepen</text>
+
+    <rect x="400" y="0" width="74" height="28" rx="4" fill="#1A2138" stroke="rgba(245,239,230,0.10)" stroke-width="0.5"/>
+    <text x="437" y="18" font-family="monospace" font-size="9" fill="#8892AB" text-anchor="middle">synthesis</text>
+
+    <rect x="500" y="0" width="74" height="28" rx="4" fill="#1A2138" stroke="rgba(232,90,140,0.20)" stroke-width="0.5"/>
+    <text x="537" y="18" font-family="monospace" font-size="9" fill="#ED7F65" text-anchor="middle">validate</text>
+  </g>
+
+  <!-- Stats -->
+  <g transform="translate(640, 60)">
+    <text x="0" y="0" font-family="monospace" font-size="8" fill="#8892AB" letter-spacing="2">PIPELINE</text>
+    <text x="0" y="28" font-family="Georgia, serif" font-style="italic" font-size="28" fill="#F5EFE6">5</text>
+    <text x="28" y="28" font-family="monospace" font-size="9" fill="#8892AB"> agents parallel</text>
+
+    <text x="0" y="60" font-family="Georgia, serif" font-style="italic" font-size="28" fill="#F5EFE6">8</text>
+    <text x="22" y="60" font-family="monospace" font-size="9" fill="#8892AB"> pipeline stages</text>
+
+    <text x="0" y="92" font-family="Georgia, serif" font-style="italic" font-size="28" fill="#F5EFE6">3</text>
+    <text x="22" y="92" font-family="monospace" font-size="9" fill="#8892AB"> output formats</text>
+  </g>
+
+  <!-- Severity pills -->
+  <g transform="translate(640, 180)">
+    <text x="0" y="0" font-family="monospace" font-size="8" fill="#8892AB" letter-spacing="2">SEVERITY</text>
+    <rect x="0" y="10" width="60" height="18" rx="3" fill="rgba(220,38,38,0.14)"/>
+    <circle cx="12" cy="19" r="3" fill="#DC2626"/>
+    <text x="20" y="23" font-family="monospace" font-size="8" fill="#F5EFE6">critical</text>
+
+    <rect x="68" y="10" width="44" height="18" rx="3" fill="rgba(240,141,74,0.14)"/>
+    <circle cx="80" cy="19" r="3" fill="#F08D4A"/>
+    <text x="88" y="23" font-family="monospace" font-size="8" fill="#F5EFE6">high</text>
+
+    <rect x="120" y="10" width="56" height="18" rx="3" fill="rgba(232,194,107,0.14)"/>
+    <circle cx="132" cy="19" r="3" fill="#E8C26B"/>
+    <text x="140" y="23" font-family="monospace" font-size="8" fill="#F5EFE6">medium</text>
+
+    <rect x="184" y="10" width="40" height="18" rx="3" fill="rgba(122,146,196,0.14)"/>
+    <circle cx="196" cy="19" r="3" fill="#7A92C4"/>
+    <text x="204" y="23" font-family="monospace" font-size="8" fill="#F5EFE6">low</text>
+  </g>
+
+  <!-- Bottom gradient rule -->
+  <rect x="0" y="318" width="960" height="2" fill="url(#dawn)"/>
+</svg>
