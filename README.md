@@ -1,36 +1,46 @@
-# Daybreak Solana
+<p align="center">
+  <img src="assets/hero.svg" alt="Daybreak Solana" width="100%"/>
+</p>
 
-**Open-source security audit tool for Solana programs.** Daybreak runs a pipeline of specialized Claude-powered agents against your program's source code, preceded by static analysis, and presents findings in a web dashboard.
+<p align="center">
+  <strong>Open-source multi-agent security auditor for Solana programs.</strong><br>
+  <sub>Five specialized Claude-powered agents analyze your code in parallel, preceded by static analysis, and present findings in a triage dashboard with PDF/Markdown export.</sub>
+</p>
 
-Built by [Daybreak](https://daybreaksec.com) — fractional security engineering for teams that need expert coverage without the overhead of traditional audit firms or full-time hires.
+<p align="center">
+  <a href="https://daybreaksec.com">daybreaksec.com</a> &middot;
+  <a href="#getting-started">getting started</a> &middot;
+  <a href="#pipeline">pipeline</a> &middot;
+  <a href="LICENSE">apache 2.0</a>
+</p>
 
-## How It Works
+---
 
-```
-prescan -> scout -> 5 agents (parallel) + threat model -> deepening -> synthesis -> validation
-```
+## Pipeline
 
-**Prescan** extracts structural data using tree-sitter extractors, ast-grep rules, clippy, and cargo-audit. Outputs feed into agents as prioritized context.
+<img src="assets/pipeline.svg" alt="Pipeline diagram" width="100%"/>
 
-**Scout** maps program structure: instructions, accounts, access control, data flows.
+**Prescan** extracts structural data using tree-sitter, ast-grep rules, clippy, and cargo-audit. Outputs feed into agents as prioritized context.
+
+**Scout** maps program structure: instructions, accounts, access control patterns, data flows.
 
 **Five scanning agents** run in parallel, each covering a vulnerability domain:
 
-| Agent | Domain |
-|-------|--------|
-| `accounts-access` | Account validation, access control |
-| `cpi-token` | Cross-program invocation, token ops |
-| `arithmetic-economic` | Math safety, economic attacks |
-| `state-lifecycle` | State machines, account lifecycle |
-| `invariant-logic` | Business logic, conservation laws |
+| Agent | Domain | Covers |
+|-------|--------|--------|
+| `accounts-access` | Account validation | Missing signer checks, PDA validation, ownership confusion |
+| `cpi-token` | Cross-program invocation | Unsafe CPI, token operation misuse, authority escalation |
+| `arithmetic-economic` | Math & economics | Overflow, precision loss, flash loan, oracle manipulation |
+| `state-lifecycle` | State machines | Initialization, reinitialization, account closure, rent |
+| `invariant-logic` | Business logic | Conservation laws, constraint violations, logic errors |
 
-**Threat model** produces a security architecture map: actors, trust boundaries, invariants, attack surfaces.
+**Threat model** runs alongside agents, producing a security architecture map: actors, trust boundaries, invariants, attack surfaces.
 
-**Deepening** re-runs owning agents on high/critical findings for focused re-analysis.
+**Deepening** re-runs owning agents on high/critical findings for focused re-analysis with full source context.
 
-**Synthesis** looks across all findings for compound vulnerabilities and coverage gaps.
+**Synthesis** looks across all findings for compound vulnerabilities and coverage gaps that no single agent would catch.
 
-**Validation** is a pessimistic adversarial agent that tries to disprove every finding.
+**Validation** is a pessimistic adversarial agent that tries to disprove every finding before it reaches the dashboard.
 
 ## Getting Started
 
@@ -40,7 +50,7 @@ See [GETTING-STARTED.md](GETTING-STARTED.md) for full setup instructions.
 
 ```bash
 npm run setup              # check deps, install packages
-claude auth login                # one-time browser login
+claude auth login          # one-time browser login
 npm run dev                # server :3000 + client :5173
 ```
 
@@ -67,12 +77,11 @@ Daybreak uses the Claude Code CLI for authentication. Running `claude` once open
 | cargo | No | Clippy + cargo-audit skipped if missing |
 | Docker 20.10+ | No | Alternative to local setup |
 
-## Remote Access (VPS / headless server)
+## Remote Access
 
-If you're running Daybreak on a remote server (VPS, cloud instance, etc.), use an SSH tunnel to access the dashboard from your local machine — no ports need to be exposed to the internet.
+If you're running Daybreak on a remote server, use an SSH tunnel to access the dashboard:
 
 ```bash
-# From your local machine:
 ssh -L 5173:localhost:5173 -L 3000:localhost:3000 user@your-server-ip
 ```
 
@@ -88,16 +97,16 @@ Host daybreak-server
   LocalForward 3000 localhost:3000
 ```
 
-Then just `ssh daybreak-server` and the ports are forwarded automatically.
-
 ## About Daybreak
 
-Daybreak provides embedded security engineering for emerging tech companies. Rather than point-in-time audits, Daybreak operates as a continuous security presence — reviewing code as it evolves, producing threat models, and maintaining full context across the product lifecycle.
+Daybreak provides embedded security engineering for emerging tech companies. Rather than point-in-time audits, Daybreak operates as a continuous security presence -- reviewing code as it evolves, producing threat models, and maintaining full context across the product lifecycle.
 
 This tool is how we work. We open-sourced it so every team can run the same pipeline we use in production engagements.
 
-[daybreaksec.com](https://daybreaksec.com)
+<p align="center">
+  <a href="https://daybreaksec.com">daybreaksec.com</a> &middot; <a href="mailto:colin@daybreaksec.com">colin@daybreaksec.com</a>
+</p>
 
 ## License
 
-Apache 2.0 — see [LICENSE](LICENSE).
+Apache 2.0 -- see [LICENSE](LICENSE).

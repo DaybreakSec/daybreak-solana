@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { spawn } = require('child_process');
 
 /**
  * Parse scope notes into actionable directives for filtering the audit.
@@ -14,7 +15,8 @@ const path = require('path');
  *   include:<glob>      — only include files matching glob
  *   exclude:<glob>      — exclude files matching glob
  *
- * Fuzzy: "week4 only", "only week4" → scans repo for directories matching *week4*
+ * Free-form scope notes (e.g. "just the bid wall program") are handled by
+ * refineScopeWithLLM() separately — this function only handles structured patterns.
  *
  * @param {string} scopeNotes — raw scope notes text
  * @returns {{ branch?: string, pr?: number, commit?: string, tag?: string,
@@ -29,7 +31,6 @@ function parseScopeDirectives(scopeNotes) {
 
   // Normalize line endings and split
   const lines = scopeNotes.replace(/\r\n/g, '\n').split('\n');
-  const full = scopeNotes.trim();
 
   for (const rawLine of lines) {
     const line = rawLine.trim();
@@ -82,15 +83,6 @@ function parseScopeDirectives(scopeNotes) {
     if (excludeMatch) {
       excludePatterns.push(excludeMatch[1].trim());
       continue;
-    }
-  }
-
-  // Fuzzy: "<word> only" or "only <word>" — attempt to detect a subdirectory hint
-  if (!directives.subdir) {
-    const fuzzyMatch = full.match(/\b(\w+)\s+only\b/i) || full.match(/\bonly\s+(\w+)\b/i);
-    if (fuzzyMatch) {
-      directives.subdir = fuzzyMatch[1];
-      directives._fuzzySubdir = true; // mark as fuzzy so caller can validate
     }
   }
 
@@ -184,4 +176,199 @@ function matchesPattern(filePath, pattern) {
   return fp.startsWith(pat) || fp === pat;
 }
 
-module.exports = { parseScopeDirectives, resolveFuzzySubdir, matchesPattern };
+/**
+ * Build a directory tree string for a target directory, up to maxDepth levels.
+ * Skips hidden dirs, node_modules, and target/.
+ *
+ * @param {string} targetDir — root directory to scan
+ * @param {number} maxDepth — maximum depth (default 3)
+ * @returns {string} — formatted directory tree
+ */
+function buildDirTree(targetDir, maxDepth = 3) {
+  const lines = [];
+
+  function walk(dir, depth, prefix) {
+    if (depth > maxDepth) return;
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    const dirs = entries
+      .filter(e => e.isDirectory() && !e.name.startsWith('.') && e.name !== 'node_modules' && e.name !== 'target')
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    for (let i = 0; i < dirs.length; i++) {
+      const entry = dirs[i];
+      const isLast = i === dirs.length - 1;
+      const connector = isLast ? '└── ' : '├── ';
+      const childPrefix = isLast ? '    ' : '│   ';
+      lines.push(prefix + connector + entry.name + '/');
+      walk(path.join(dir, entry.name), depth + 1, prefix + childPrefix);
+    }
+  }
+
+  lines.push(path.basename(targetDir) + '/');
+  walk(targetDir, 0, '');
+  return lines.join('\n');
+}
+
+/**
+ * Read Cargo.toml files from the target directory to surface CPI/dependency info.
+ * Returns a map of relative path → relevant dependency lines.
+ *
+ * @param {string} targetDir — root directory to scan
+ * @returns {string} — formatted Cargo.toml dependency snippets
+ */
+function readCargoFiles(targetDir) {
+  const snippets = [];
+
+  function scan(dir, depth) {
+    if (depth > 4) return;
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (entry.name === 'Cargo.toml' && entry.isFile()) {
+        try {
+          const content = fs.readFileSync(path.join(dir, entry.name), 'utf8');
+          const rel = path.relative(targetDir, path.join(dir, entry.name));
+          // Extract [dependencies] and [dev-dependencies] sections
+          const depSections = content.match(/\[(dependencies|dev-dependencies)\][\s\S]*?(?=\n\[|$)/g);
+          if (depSections) {
+            snippets.push(`--- ${rel} ---\n${depSections.join('\n')}`);
+          }
+        } catch {}
+      }
+      if (entry.isDirectory() && !entry.name.startsWith('.') && entry.name !== 'node_modules' && entry.name !== 'target') {
+        scan(path.join(dir, entry.name), depth + 1);
+      }
+    }
+  }
+
+  scan(targetDir, 0);
+  return snippets.join('\n\n');
+}
+
+/**
+ * Use Claude (haiku) to interpret free-form scope notes against the actual repo structure.
+ * Identifies the target program AND any cross-program CPI dependencies.
+ *
+ * @param {string} targetDir — cloned repo root
+ * @param {string} scopeNotes — user's free-form scope notes
+ * @returns {Promise<{ primaryProgram: string, includePatterns?: string[], excludePatterns?: string[], reasoning: string }>}
+ */
+async function refineScopeWithLLM(targetDir, scopeNotes) {
+  const dirTree = buildDirTree(targetDir, 3);
+  const cargoInfo = readCargoFiles(targetDir);
+
+  const systemPrompt = `You are a scope-resolution assistant for a Solana smart-contract auditor.
+Given a repository directory tree, Cargo.toml dependency snippets, and the user's scope notes,
+determine which program(s) the user wants to audit.
+
+Rules:
+- Identify the PRIMARY program directory the user is referring to (relative path from repo root).
+- Check Cargo.toml dependencies to find cross-program invocation (CPI) targets — other programs
+  in the same repo that the primary program calls or depends on.
+- Return includePatterns as glob patterns (e.g. "programs/bid_wall/**") covering the primary
+  program AND all its in-repo CPI dependencies.
+- If the scope notes don't clearly refer to any specific program, set primaryProgram to "" and
+  return empty includePatterns (meaning: scan everything).
+- Be generous in interpretation: "just the bid wall program", "only bid_wall", "focus on bid wall",
+  "bid wall" all mean the same thing.
+- Return valid JSON matching the provided schema.`;
+
+  const userPrompt = `Directory tree:
+${dirTree}
+
+Cargo.toml dependencies:
+${cargoInfo || '(none found)'}
+
+User scope notes: "${scopeNotes}"
+
+Identify the target program and any CPI dependencies. Return JSON.`;
+
+  const jsonSchema = JSON.stringify({
+    type: 'object',
+    properties: {
+      primaryProgram: { type: 'string', description: 'Main program directory the user is targeting (relative path from repo root, e.g. "programs/bid_wall")' },
+      includePatterns: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Glob patterns for all directories to include (primary + CPI dependencies)',
+      },
+      excludePatterns: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Glob patterns to exclude',
+      },
+      reasoning: { type: 'string', description: 'Brief explanation of interpretation and CPI dependencies found' },
+    },
+    required: ['primaryProgram', 'includePatterns', 'reasoning'],
+  });
+
+  return new Promise((resolve, reject) => {
+    const args = [
+      '-p',
+      '--system-prompt', systemPrompt,
+      '--output-format', 'json',
+      '--json-schema', jsonSchema,
+      '--model', 'haiku',
+      '--no-session-persistence',
+      '--tools', '',
+    ];
+
+    const proc = spawn('claude', args, {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: {
+        PATH: process.env.PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+        HOME: process.env.HOME || '/home/daybreak',
+        USER: process.env.USER || 'daybreak',
+        SHELL: process.env.SHELL || '/bin/bash',
+        LANG: process.env.LANG || 'en_US.UTF-8',
+        TERM: process.env.TERM || 'dumb',
+        CLAUDECODE: '',
+        ...(process.env.ANTHROPIC_API_KEY ? { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY } : {}),
+      },
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    proc.stdout.on('data', (d) => { stdout += d.toString(); });
+    proc.stderr.on('data', (d) => { stderr += d.toString(); });
+
+    proc.stdin.write(userPrompt);
+    proc.stdin.end();
+
+    const timer = setTimeout(() => {
+      try { proc.kill('SIGTERM'); } catch {}
+      reject(new Error('LLM scope refinement timed out after 30s'));
+    }, 30000);
+
+    proc.on('close', (code) => {
+      clearTimeout(timer);
+      if (code !== 0) {
+        reject(new Error(`LLM scope refinement exited with code ${code}: ${stderr}`));
+        return;
+      }
+      try {
+        const parsed = JSON.parse(stdout);
+        resolve(parsed);
+      } catch (err) {
+        reject(new Error(`LLM scope refinement returned invalid JSON: ${err.message}`));
+      }
+    });
+
+    proc.on('error', (err) => {
+      clearTimeout(timer);
+      reject(new Error(`LLM scope refinement spawn error: ${err.message}`));
+    });
+  });
+}
+
+module.exports = { parseScopeDirectives, resolveFuzzySubdir, matchesPattern, refineScopeWithLLM, buildDirTree };

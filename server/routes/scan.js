@@ -6,7 +6,7 @@ const { startPipeline, cancelScan, getActiveScan, runPrescan, resolveTargetDir }
 const router = express.Router();
 
 const fs = require('fs');
-const { parseScopeDirectives, resolveFuzzySubdir } = require('../lib/scope-resolver');
+const { parseScopeDirectives, refineScopeWithLLM } = require('../lib/scope-resolver');
 
 const BLOCKED_DIRS = ['/etc', '/var', '/proc', '/sys', '/dev', '/root', '/boot', '/lost+found'];
 const BLOCKED_SUFFIXES = ['/.ssh', '/.gnupg', '/.aws', '/.config/claude', '/.env'];
@@ -79,64 +79,72 @@ router.post('/scope', (req, res) => {
     return res.status(400).json({ error: err.message });
   }
 
-  // If fuzzy subdir was set, resolve it now against the target
-  if (directives._fuzzySubdir && directives.subdir) {
-    const resolved = resolveFuzzySubdir(targetDir, directives.subdir);
-    if (resolved) {
-      directives.subdir = resolved;
-      directives._fuzzySubdir = false;
-      const narrowed = path.join(targetDir, resolved);
-      if (fs.existsSync(narrowed) && fs.lstatSync(narrowed).isDirectory()) {
-        targetDir = narrowed;
-        console.log(`Fuzzy subdir resolved to: ${resolved}, narrowing scope to ${targetDir}`);
-      }
-    } else {
-      console.warn(`Fuzzy subdir hint "${directives.subdir}" did not match, scanning full repo`);
-      delete directives.subdir;
-      delete directives._fuzzySubdir;
-    }
-  }
-
   // Return 202 immediately. Scope page polls for the result.
   res.status(202).json({ ok: true, message: 'Scope analysis started' });
 
-  // Spawn scope.sh in the background
-  const repoRoot = path.resolve(__dirname, '..', '..');
-  const scopeScript = path.join(repoRoot, 'scripts', 'scope.sh');
-  const proc = spawn('bash', [scopeScript, targetDir], {
-    stdio: ['ignore', 'pipe', 'pipe'],
-    timeout: 120000,
-  });
-
-  let stdout = '';
-  let stderr = '';
-  proc.stdout.on('data', d => { stdout += d.toString(); });
-  proc.stderr.on('data', d => { stderr += d.toString(); });
-
-  proc.on('close', (code) => {
-    if (code !== 0) {
-      console.error(`scope.sh exited with code ${code}: ${stderr}`);
-      return;
-    }
-    try {
-      const scopeData = JSON.parse(stdout);
-
-      // Attach resolved directives so the UI can display them
-      const cleanDirectives = { ...directives };
-      delete cleanDirectives._fuzzySubdir;
-      if (Object.keys(cleanDirectives).length > 0) {
-        scopeData.resolvedDirectives = cleanDirectives;
+  // Run LLM refinement (if needed) and scope.sh in the background
+  (async () => {
+    // If scope notes exist and no structured subdir was set, ask Claude to interpret
+    if (!directives.subdir && audit.scopeNotes && audit.scopeNotes.trim()) {
+      try {
+        const refined = await refineScopeWithLLM(targetDir, audit.scopeNotes);
+        if (refined.primaryProgram) {
+          directives.subdir = refined.primaryProgram;
+          directives._reasoning = refined.reasoning;
+          const narrowed = path.join(targetDir, refined.primaryProgram);
+          if (fs.existsSync(narrowed) && fs.lstatSync(narrowed).isDirectory()) {
+            targetDir = narrowed;
+            console.log(`LLM scope refinement: "${refined.primaryProgram}" — ${refined.reasoning}`);
+          }
+        }
+        if (refined.includePatterns && refined.includePatterns.length > 0) {
+          directives.includePatterns = refined.includePatterns;
+        }
+        if (refined.excludePatterns && refined.excludePatterns.length > 0) {
+          directives.excludePatterns = refined.excludePatterns;
+        }
+      } catch (err) {
+        console.warn('LLM scope refinement failed, continuing with full repo:', err.message);
       }
-
-      writeJSON('scope.json', scopeData);
-    } catch (err) {
-      console.error('Failed to parse scope.sh output:', err.message);
     }
-  });
 
-  proc.on('error', (err) => {
-    console.error('scope.sh spawn error:', err.message);
-  });
+    // Spawn scope.sh with (possibly narrowed) targetDir
+    const repoRoot = path.resolve(__dirname, '..', '..');
+    const scopeScript = path.join(repoRoot, 'scripts', 'scope.sh');
+    const proc = spawn('bash', [scopeScript, targetDir], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 120000,
+    });
+
+    let stdout = '';
+    let stderr = '';
+    proc.stdout.on('data', d => { stdout += d.toString(); });
+    proc.stderr.on('data', d => { stderr += d.toString(); });
+
+    proc.on('close', (code) => {
+      if (code !== 0) {
+        console.error(`scope.sh exited with code ${code}: ${stderr}`);
+        return;
+      }
+      try {
+        const scopeData = JSON.parse(stdout);
+
+        // Attach resolved directives so the UI can display them
+        const cleanDirectives = { ...directives };
+        if (Object.keys(cleanDirectives).length > 0) {
+          scopeData.resolvedDirectives = cleanDirectives;
+        }
+
+        writeJSON('scope.json', scopeData);
+      } catch (err) {
+        console.error('Failed to parse scope.sh output:', err.message);
+      }
+    });
+
+    proc.on('error', (err) => {
+      console.error('scope.sh spawn error:', err.message);
+    });
+  })();
 });
 
 // POST /api/scan/start - kick off the async scan pipeline
