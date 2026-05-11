@@ -66,14 +66,12 @@ Docker bundles Node, Python, tree-sitter, ast-grep, and the Claude CLI into a si
 ### Steps
 
 ```bash
-# 1. Build and start
-docker compose up -d
+# 1. Build, start, and authenticate (one command)
+npm run docker:setup
+# Builds the image, starts the container, then opens Claude auth login.
+# Follow the browser link to authenticate, then return to shell.
 
-# 2. Authenticate Claude CLI (one-time, interactive)
-docker compose exec daybreak claude auth login
-# Opens browser login, returns to shell when complete
-
-# 3. Open the dashboard
+# 2. Open the dashboard
 open http://localhost:3000
 ```
 

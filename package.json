@@ -24,6 +24,7 @@
     "build": "npm run build --workspace=client",
     "start": "npm run start --workspace=server",
     "setup": "bash scripts/setup.sh",
+    "docker:setup": "docker compose up -d --build && docker compose exec daybreak claude auth login",
     "test": "vitest run",
     "test:watch": "vitest"
   },

@@ -55,14 +55,13 @@ npm run dev                # server :3000 + client :5173
 ### Docker
 
 ```bash
-docker compose up -d
-docker compose exec daybreak claude auth login    # one-time browser login
+npm run docker:setup    # build, start, and authenticate Claude CLI
 # open http://localhost:3000
 ```
 
 ### Authentication
 
-Daybreak uses the Claude Code CLI for authentication. Running `claude` once opens a browser-based OAuth flow that persists credentials locally. In Docker, the `claude-auth` volume keeps the session across container restarts.
+Daybreak uses the Claude Code CLI for authentication. `npm run docker:setup` handles this automatically -- it builds the container, starts it, and drops you into the Claude auth flow. For local installs, `claude auth login` opens the same browser-based OAuth flow. In Docker, the `claude-auth` volume keeps the session across container restarts.
 
 ## Requirements
 
